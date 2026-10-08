@@ -1,6 +1,7 @@
 using System.Text.Json;
 using WindowGather;
 using Shortcut = WindowGather.Shortcut;
+using Keys = WindowGather.ShortcutKey;
 
 internal static class Program
 {
@@ -147,6 +148,7 @@ internal static class Program
                 Check(desktop.Windows[1].Placement.ShowCommand == 2);
             });
             Test("disk recovery round trips and rejects corrupt data", TestDiskStore);
+            Test("legacy recovery schema and numeric shortcuts retain exact file contracts", TestLegacyContracts);
             TestShortcuts();
             if (args.Contains("--native")) TestNative();
             if (args.Contains("--ui")) TestUi();
@@ -182,6 +184,66 @@ internal static class Program
         }
     }
 
+    private static void TestLegacyContracts()
+    {
+        const string recovery = """
+            {
+              "Version": 1,
+              "Token": "b0aaf9a8-9d03-4ac6-ad7c-0490c63ecc04",
+              "CreatedUtc": "2026-01-01T00:00:00Z",
+              "Target": {
+                "Id": "target", "DeviceName": "\\\\.\\DISPLAY4", "Name": "Destination",
+                "Bounds": {"Left": 0, "Top": 0, "Right": 1920, "Bottom": 1080},
+                "WorkArea": {"Left": 0, "Top": 40, "Right": 1920, "Bottom": 1080}
+              },
+              "Windows": [{
+                "Handle": 42, "ProcessId": 123, "ProcessStartedUtcTicks": 1000, "ClassName": "LegacyWindow",
+                "Placement": {
+                  "Flags": 2, "ShowCommand": 3,
+                  "Min": {"X": -1, "Y": -1}, "Max": {"X": -1, "Y": -1},
+                  "Normal": {"Left": -1800, "Top": 100, "Right": -1300, "Bottom": 600}
+                },
+                "Origin": {
+                  "Id": "origin", "DeviceName": "\\\\.\\DISPLAY1", "Name": "Desk",
+                  "Bounds": {"Left": -1920, "Top": 0, "Right": 0, "Bottom": 1080},
+                  "WorkArea": {"Left": -1920, "Top": 0, "Right": 0, "Bottom": 1040}
+                }
+              }]
+            }
+            """;
+        const string shortcutJson = """{"Gather":{"Modifiers":3,"Key":122},"Restore":{"Modifiers":3,"Key":123}}""";
+        string directory = Path.Combine(AppContext.BaseDirectory, "legacy-contract-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string sessionPath = Path.Combine(directory, "session.json");
+            File.WriteAllText(sessionPath, recovery);
+            var store = new SessionStore(directory);
+            GatherSession loaded = store.Load()!;
+            Check(loaded.Windows.Single().Placement.Flags == 2 && loaded.Windows.Single().Placement.ShowCommand == 3);
+            store.Save(loaded);
+            using var original = JsonDocument.Parse(recovery);
+            using var rewritten = JsonDocument.Parse(File.ReadAllText(sessionPath));
+            Check(JsonElement.DeepEquals(original.RootElement, rewritten.RootElement), "Recovery field/value contract changed.");
+            string shortcutPath = Path.Combine(directory, "shortcuts.json");
+            File.WriteAllText(shortcutPath, shortcutJson);
+            var shortcuts = new ShortcutStore(directory);
+            Check(shortcuts.Load() == ShortcutSettings.Defaults);
+            shortcuts.Save(shortcuts.Load());
+            Check(File.ReadAllText(shortcutPath) == shortcutJson, "Legacy Keys numeric values changed.");
+            var legacy = typeof(MainForm).Assembly;
+            foreach (Type moved in new[] { typeof(Box), typeof(Display), typeof(Geometry), typeof(GatherEngine),
+                typeof(GatherSession), typeof(IDesktop), typeof(ISessionStore), typeof(SessionStore), typeof(NativeDesktop) })
+                Check(legacy.GetType(moved.FullName!, throwOnError: true) == moved, "Missing public type forwarder.");
+        }
+        finally
+        {
+            foreach (string name in new[] { "session.json", "session.json.tmp", "shortcuts.json", "shortcuts.json.tmp" })
+                File.Delete(Path.Combine(directory, name));
+            Directory.Delete(directory);
+        }
+    }
+
     private static void TestNative()
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -189,6 +251,63 @@ internal static class Program
         IReadOnlyList<Display> displays = native.GetDisplays();
         Console.WriteLine($"Native display discovery: {displays.Count} displays.");
         foreach (Display display in displays) Console.WriteLine($"  {display}");
+        Test("non-WinForms Identify labels retain no-activate lifetime and physical placement", () =>
+        {
+            using var identifier = new NativeDisplayIdentifier();
+            nint foreground = GetForegroundWindow();
+            identifier.ShowDisplays(displays);
+            Check(identifier.Handles.Count == displays.Count);
+            Check(GetForegroundWindow() == foreground);
+            for (int i = 0; i < displays.Count; i++)
+            {
+                nint handle = identifier.Handles[i];
+                Check((Native.GetWindowLongPtr(handle, -20).ToInt64() & 0x08000080) == 0x08000080);
+                Check(native.CaptureWindow(handle).Origin.Id == displays[i].Id);
+            }
+            nint[] old = identifier.Handles.ToArray();
+            identifier.ShowDisplays(displays);
+            Check(old.All(h => !Native.IsWindow(h)));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            while (identifier.Handles.Count > 0 && watch.ElapsedMilliseconds < 5000)
+            {
+                Application.DoEvents();
+                Thread.Sleep(10);
+            }
+            Check(identifier.Handles.Count == 0, "Native identification labels must auto-dismiss after three seconds.");
+        });
+        Test("non-WinForms tray receiver handles hidden hotkeys, reopen, taskbar restart and cleanup", () =>
+        {
+            using var shell = new WindowsShell(action => { action(); return Task.CompletedTask; });
+            shell.Update(new(Array.AsReadOnly(displays.ToArray()), null, 0, false, false, 1));
+            var controller = new ShortcutController(shell, new MemoryShortcutStore());
+            var settings = new ShortcutSettings(new(7, Keys.F23), new(7, Keys.F24));
+            Check(controller.Activate(settings).Count == 0);
+            int? received = null;
+            ShellAction? action = null;
+            string? problem = null;
+            shell.HotkeyPressed += id => received = id;
+            shell.ActionRequested += value => action = value;
+            shell.Problem += message => problem = message;
+            ShellNative.PostMessage(shell.MessageWindow, 0x0312, (nuint)controller.GatherId!.Value, 0);
+            ShellNative.PostMessage(shell.MessageWindow, 0x8001, 1, 0x0203);
+            Application.DoEvents();
+            Check(received == controller.GatherId && action == ShellAction.Open);
+            var data = new ShellNative.NotifyIconData
+            {
+                Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf<ShellNative.NotifyIconData>(),
+                Window = shell.MessageWindow, Id = 1, Tip = "", Info = "", InfoTitle = ""
+            };
+            Check(ShellNative.ShellNotifyIcon(2, ref data));
+            uint taskbarCreated = ShellNative.RegisterWindowMessage("TaskbarCreated");
+            ShellNative.PostMessage(shell.MessageWindow, taskbarCreated, 0, 0);
+            Application.DoEvents();
+            Check(problem is null, problem);
+            shell.Update(new(Array.AsReadOnly(displays.ToArray()), null, 0, false, false, 2));
+            controller.Release();
+            nint receiver = shell.MessageWindow;
+            shell.Dispose();
+            Check(!Native.IsWindow(receiver));
+        });
         Test("native hotkeys reserve replacements, reject conflicts, and release cleanly", () =>
         {
             using var owner = new Form { ShowInTaskbar = false };
@@ -437,7 +556,8 @@ internal static class Program
             Check(restore.Enabled && details.Visible && details.Text.Length > 0);
             Rectangle detailBounds = details.Parent!.RectangleToClient(details.RectangleToScreen(details.ClientRectangle));
             Check(detailBounds.Top >= 0 && detailBounds.Bottom <= details.Parent.ClientSize.Height,
-                "Operation errors must be scrolled into view.");
+                $"Operation errors must be scrolled into view. Bounds: {detailBounds}; " +
+                $"viewport: {details.Parent.ClientSize}; DPI: {form.DeviceDpi}.");
             Check(form.RectangleToClient(reference.RectangleToScreen(reference.ClientRectangle)).Bottom <= form.ClientSize.Height,
                 "Errors must not push shortcuts off screen.");
             using (var bitmap = new Bitmap(form.Width, form.Height))

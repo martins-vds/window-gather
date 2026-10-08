@@ -12,3 +12,6 @@ session.json
 session.json.tmp
 shortcuts.json
 shortcuts.json.tmp
+artifacts/
+StrykerOutput/
+*.binlog

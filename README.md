@@ -19,21 +19,38 @@ The application is unsigned. Source code is included so you can inspect and buil
 
 ## Build
 
-Requires Windows and the .NET 10 SDK. There are no third-party NuGet dependencies.
+Requires Windows and the .NET SDK pinned by `global.json` (10.0.401).
+The migrated frontend uses **WinUI 3 / Windows App SDK 2.5.1** and
+**CommunityToolkit.Mvvm 8.4.2**, with **C# 14** explicitly selected.
+Domain and Application target portable `net10.0` and have no third-party packages.
 
 ```powershell
-dotnet build .\WindowGather\WindowGather.csproj -c Release
-dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release
-dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- --native --ui
-dotnet publish .\WindowGather\WindowGather.csproj -c Release -r win-x64 `
-  --self-contained true -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o .\release
+.\scripts\Verify.ps1
+.\scripts\Verify.ps1 -Native -LegacyUi -Mutation
+.\scripts\Publish.ps1 -Format Folder
+.\scripts\Publish.ps1 -Format SingleFile
 ```
 
 The native tests move only their own disposable test windows, never your
 application windows. Multi-monitor movement tests require two or more displays.
-The portable publish includes .NET, so the resulting executable needs no separate runtime.
+Native/UI suites require an interactive Windows desktop; CI runs portable tests,
+both frontend builds, publishing, and separate core mutation runs.
+
+Launch `artifacts\publish-win-x64-folder\WindowGather.WinUI.exe`, or the
+single executable in `artifacts\publish-win-x64-singlefile`. The single-file
+configuration extracts its self-contained .NET and Windows App SDK contents
+at runtime; it is **one distributable file**, not an extraction-free application.
+`-Runtime win-arm64` selects the native ARM64 distribution.
+
+The original WinForms project and existing 1.2 release are retained as a
+regression reference. Exit either frontend before launching the other: both
+use the same mutex, recovery schema, storage directory, and numeric shortcut
+settings. See [architecture, quality gates, and verification](ARCHITECTURE.md)
+and the [implementation plan](WINUI-MIGRATION-PLAN.md).
 
 The default shortcuts are **Ctrl+Alt+F11** to gather onto the monitor under your
 pointer and **Ctrl+Alt+F12** to restore. Use **Change shortcuts...** to save your
 own combinations.
+Windows reserves F12 for debuggers, so the legacy Restore default may fail to
+register. The default is preserved rather than silently rewriting saved settings;
+choose another key in Change shortcuts if registration fails.

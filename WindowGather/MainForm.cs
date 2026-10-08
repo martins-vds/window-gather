@@ -22,7 +22,7 @@ public sealed class MainForm : Form
     private readonly TextBox details = new()
     {
         Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-        Dock = DockStyle.Fill, BackColor = SystemColors.Window
+        Dock = DockStyle.Top, BackColor = SystemColors.Window
     };
     private readonly MonitorMap map = new() { Dock = DockStyle.Fill, Height = 140 };
     private readonly NotifyIcon tray;
@@ -229,11 +229,13 @@ public sealed class MainForm : Form
     private void ShowDetails(string text)
     {
         details.Text = text;
-        details.MinimumSize = text.Length > 0 ? new Size(0, 96) : Size.Empty;
+        int height = (int)Math.Round(96 * DeviceDpi / 96f);
+        details.Height = height;
+        details.MinimumSize = text.Length > 0 ? new Size(0, height) : Size.Empty;
         details.Visible = text.Length > 0;
         if (details.Parent is TableLayoutPanel layout)
         {
-            layout.RowStyles[6].Height = text.Length > 0 ? 96 : 0;
+            layout.RowStyles[6].Height = text.Length > 0 ? height + details.Margin.Vertical : 0;
             layout.PerformLayout();
             if (text.Length > 0) layout.ScrollControlIntoView(details);
         }

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <PlatformTarget Condition="'$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">ARM64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WindowGather.Domain\WindowGather.Domain.csproj" />
+    <ProjectReference Include="..\WindowGather.Quality\WindowGather.Quality.csproj" />
+    <ProjectReference Include="..\WindowGather.Application\WindowGather.Application.csproj" />
+    <ProjectReference Include="..\WindowGather.Presentation\WindowGather.Presentation.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

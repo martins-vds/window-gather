@@ -1,0 +1,41 @@
+name: Verify
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Portable tests, coverage, method CRAP and frontend builds
+        shell: pwsh
+        run: .\scripts\Verify.ps1
+      - name: Self-contained folder
+        shell: pwsh
+        run: .\scripts\Publish.ps1 -Format Folder
+      - name: Single distributable executable
+        shell: pwsh
+        run: .\scripts\Publish.ps1 -Format SingleFile
+  mutation:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore pinned local tools
+        shell: pwsh
+        run: |
+          dotnet restore .\WindowGather.Core.Tests\WindowGather.Core.Tests.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet tool restore
+      - name: Domain mutation
+        working-directory: WindowGather.Core.Tests
+        run: dotnet stryker --config-file stryker-domain.json --output ..\artifacts\mutation-domain
+      - name: Application mutation
+        working-directory: WindowGather.Core.Tests
+        run: dotnet stryker --config-file stryker-application.json --output ..\artifacts\mutation-application

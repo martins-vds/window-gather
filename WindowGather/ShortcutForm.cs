@@ -1,3 +1,5 @@
+using Keys = WindowGather.ShortcutKey;
+
 namespace WindowGather;
 
 internal sealed class ShortcutForm : Form

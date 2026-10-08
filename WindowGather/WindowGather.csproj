@@ -12,4 +12,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\WindowGather.Infrastructure.Windows\WindowGather.Infrastructure.Windows.csproj" />
+  </ItemGroup>
 </Project>

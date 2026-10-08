@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="WindowGather.Application/WindowGather.Application.csproj" />
+  <Project Path="WindowGather.Core.Tests/WindowGather.Core.Tests.csproj" />
+  <Project Path="WindowGather.Domain/WindowGather.Domain.csproj" />
+  <Project Path="WindowGather.Infrastructure.Windows/WindowGather.Infrastructure.Windows.csproj" />
+  <Project Path="WindowGather.Presentation/WindowGather.Presentation.csproj" />
+  <Project Path="WindowGather.Quality/WindowGather.Quality.csproj" />
+  <Project Path="WindowGather.Tests/WindowGather.Tests.csproj" />
+  <Project Path="WindowGather.WinUI/WindowGather.WinUI.csproj" />
+  <Project Path="WindowGather/WindowGather.csproj" />
+</Solution>

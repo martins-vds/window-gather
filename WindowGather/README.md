@@ -6,7 +6,9 @@ destination are excluded from both operations.
 
 ## Run
 
-Open `WindowGather.exe`. The portable x64 release includes .NET: no installation,
+Open `WindowGather.WinUI.exe` from the new publish output, or `WindowGather.exe`
+from the retained 1.2 WinForms release. Self-contained distributions include .NET
+and the new frontend also includes Windows App SDK: no installation,
 subscription, AutoHotkey, or separate runtime is required. It is an unsigned
 application, not a Microsoft- or commercially-signed product. Review the included
 source if your security policy requires it.
@@ -34,6 +36,8 @@ is locked during a gather session, but Identify remains available.
 - **Ctrl+Alt+F11** (default): gather onto the display under the mouse pointer. The pointer
   position is read once, before any windows are moved.
 - **Ctrl+Alt+F12** (default): restore the current session.
+  Windows reserves F12 for debuggers, so this legacy default may fail to register.
+  It is intentionally preserved; choose another key if a warning appears.
 - Click **Change shortcuts...** (also available in the tray menu) to choose
   Ctrl, Alt, Shift, and/or Win plus a letter, number, or function key for each
   action. At least Ctrl, Alt, or Win is required, and the actions must differ.
@@ -44,7 +48,8 @@ is locked during a gather session, but Identify remains available.
   conflicts stay visible independently of operation results. If a replacement
   is unavailable or saving fails, the previous working shortcuts are kept.
 - Closing the window keeps the utility in the notification area. Double-click
-  its icon to reopen it; right-click for a display submenu, restore, or exit.
+  its icon to reopen it; right-click for display actions, restore, or exit.
+  The WinUI tray adapter recreates its icon after Explorer/taskbar restart.
 - Hotkey conflicts appear beside the shortcut reference. Buttons and tray commands remain
   available.
 
@@ -102,18 +107,31 @@ removes the return record. **Exit** does not forget recovery.
 
 ## Build and validate
 
-Requires the .NET 10 SDK on Windows. No third-party NuGet packages.
+Requires Windows and the SDK pinned in `global.json`. The new frontend uses
+WinUI 3 and CommunityToolkit.Mvvm; the standalone Domain and Application projects
+have no third-party packages. Run these commands from the repository root:
 
 ```powershell
-dotnet build .\WindowGather\WindowGather.csproj -c Release
-dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release
-dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- --native
-dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- --native --ui
-dotnet publish .\WindowGather\WindowGather.csproj -c Release -r win-x64 `
-  --self-contained true -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true -o .\release
+.\scripts\Verify.ps1
+.\scripts\Verify.ps1 -Native -LegacyUi -Mutation
+.\scripts\Publish.ps1 -Format Folder
+.\scripts\Publish.ps1 -Format SingleFile
 ```
 
 The native tests create and move **only their own disposable test windows**.
 They never gather your application windows. Multi-monitor cases require at least
 two connected displays; unavailable cases are explicitly skipped.
+
+Build the isolated WinUI XAML parity harness with:
+
+```powershell
+dotnet publish .\WindowGather.WinUI\WindowGather.WinUI.csproj -c Release `
+  -p:UiTestBuild=true -o .\artifacts\ui-test
+```
+
+Run its executable on an interactive desktop. It uses fake desktop services and
+a disposable recovery directory, writes `ui-parity-results.txt`, and exits.
+It does not touch your recovery file or move your application windows. This test
+composition is compile-time-only and is absent from ordinary builds/publishing.
+Native movement and native shell tests remain separate; passing the fake UI
+harness alone is not evidence of native placement correctness.

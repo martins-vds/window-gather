@@ -1,11 +1,9 @@
-using System.Text.Json.Serialization;
-
 namespace WindowGather;
 
 public readonly record struct Box(int Left, int Top, int Right, int Bottom)
 {
-    [JsonIgnore] public int Width => Right - Left;
-    [JsonIgnore] public int Height => Bottom - Top;
+    public int Width => Right - Left;
+    public int Height => Bottom - Top;
 }
 
 public readonly record struct Position(int X, int Y);
@@ -19,38 +17,6 @@ public sealed record Display(string Id, string DeviceName, string Name, Box Boun
 
 public sealed record SavedWindow(long Handle, int ProcessId, long ProcessStartedUtcTicks,
     string ClassName, Placement Placement, Display Origin);
-public sealed record WindowScan(List<SavedWindow> Windows, List<string> Warnings);
-
-public sealed class GatherSession
-{
-    public int Version { get; init; } = 1;
-    public required string Token { get; init; }
-    public DateTime CreatedUtc { get; init; } = DateTime.UtcNow;
-    public required Display Target { get; init; }
-    public required List<SavedWindow> Windows { get; set; }
-}
-
-public sealed record OperationResult(int Completed, int Skipped, List<string> Problems, string Summary);
-
-public interface IDesktop
-{
-    IReadOnlyList<Display> GetDisplays();
-    Display GetPointerDisplay();
-    WindowScan CaptureWindows(string token, Display target);
-    bool Matches(SavedWindow window, string token);
-    void Mark(SavedWindow window, string token);
-    void Unmark(SavedWindow window, string token);
-    void Gather(SavedWindow window, Display target);
-    void Restore(SavedWindow window);
-}
-
-public interface ISessionStore
-{
-    GatherSession? Load();
-    void Save(GatherSession session);
-    void Clear();
-}
-
 public static class Geometry
 {
     public static Box FitNormal(Placement placement, Display origin, Display target)

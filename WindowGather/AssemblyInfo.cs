@@ -1,3 +1,17 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("WindowGather.Tests")]
+[assembly: TypeForwardedTo(typeof(WindowGather.Box))]
+[assembly: TypeForwardedTo(typeof(WindowGather.Position))]
+[assembly: TypeForwardedTo(typeof(WindowGather.Placement))]
+[assembly: TypeForwardedTo(typeof(WindowGather.Display))]
+[assembly: TypeForwardedTo(typeof(WindowGather.SavedWindow))]
+[assembly: TypeForwardedTo(typeof(WindowGather.Geometry))]
+[assembly: TypeForwardedTo(typeof(WindowGather.WindowScan))]
+[assembly: TypeForwardedTo(typeof(WindowGather.GatherSession))]
+[assembly: TypeForwardedTo(typeof(WindowGather.OperationResult))]
+[assembly: TypeForwardedTo(typeof(WindowGather.IDesktop))]
+[assembly: TypeForwardedTo(typeof(WindowGather.ISessionStore))]
+[assembly: TypeForwardedTo(typeof(WindowGather.GatherEngine))]
+[assembly: TypeForwardedTo(typeof(WindowGather.NativeDesktop))]
+[assembly: TypeForwardedTo(typeof(WindowGather.SessionStore))]

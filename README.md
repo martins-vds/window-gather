@@ -1,4 +1,4 @@
-# Window Gather
+# Window Gather 2.0.0
 
 A portable Windows utility that temporarily gathers application windows onto any
 monitor and restores only the borrowed windows to their original monitors and
@@ -17,6 +17,9 @@ placements. Windows already on the destination stay untouched.
 Read the [usage guide, recovery behavior, and limitations](WindowGather/README.md).
 The application is unsigned. Source code is included so you can inspect and build it.
 
+The 2.0.0 release replaces the presentation with WinUI 3/MVVM while retaining
+the existing recovery and shortcut formats. The legacy frontend stays at 1.2.0.
+
 ## Build
 
 Requires Windows and the .NET SDK pinned by `global.json` (10.0.401).
@@ -29,6 +32,7 @@ Domain and Application target portable `net10.0` and have no third-party package
 .\scripts\Verify.ps1 -Native -LegacyUi -Mutation
 .\scripts\Publish.ps1 -Format Folder
 .\scripts\Publish.ps1 -Format SingleFile
+.\scripts\Release.ps1
 ```
 
 The native tests move only their own disposable test windows, never your
@@ -41,6 +45,11 @@ single executable in `artifacts\publish-win-x64-singlefile`. The single-file
 configuration extracts its self-contained .NET and Windows App SDK contents
 at runtime; it is **one distributable file**, not an extraction-free application.
 `-Runtime win-arm64` selects the native ARM64 distribution.
+
+`Release.ps1` requires a clean committed checkout and creates
+`artifacts\releases\WindowGather-2.0.0-win-x64`. It contains the portable EXE,
+usage documentation, the exact committed source, a named distributable ZIP,
+release metadata and SHA-256 checksums. See [release packaging](RELEASE.md).
 
 The original WinForms project and existing 1.2 release are retained as a
 regression reference. Exit either frontend before launching the other: both

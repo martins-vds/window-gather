@@ -23,6 +23,9 @@ public sealed partial class MainWindow : Window
         ViewModel = model;
         this.getSettings = getSettings;
         InitializeComponent();
+        Version version = typeof(App).Assembly.GetName().Version
+            ?? throw new InvalidOperationException("Application version metadata is missing.");
+        Title = $"Window Gather {version.ToString(3)}";
         double scale = NativeMessage.GetWindowDpi(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
         AppWindow.Resize(new SizeInt32(Math.Min(work.Width, (int)Math.Round(760 * scale)),

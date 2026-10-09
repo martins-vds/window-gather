@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$Tag,
     [Parameter(Mandatory)][string]$Commit,
     [Parameter(Mandatory)][string]$Repository,
-    [string]$AssetDirectory = 'release-assets'
+    [string]$AssetDirectory = 'release-assets',
+    [switch]$AllowNewTag
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Release.Common.ps1')
@@ -12,8 +13,11 @@ if ($Commit -cnotmatch '^[0-9a-f]{40}$' -or $Repository -notmatch '^[A-Za-z0-9_.
 }
 if (-not $env:GH_TOKEN) { throw 'GitHub release publication requires GH_TOKEN.' }
 if ((Invoke-ReleaseGit rev-parse HEAD) -cne $Commit) { throw 'Release job checkout differs from artifact source.' }
-Invoke-ReleaseGit fetch --no-tags origin "refs/tags/${Tag}:refs/window-gather/release-tag"
-if ((Invoke-ReleaseGit rev-parse 'refs/window-gather/release-tag^{commit}') -cne $Commit) {
+$tagCommit = Get-RemoteReleaseCommit $Tag
+if ($null -eq $tagCommit -and -not $AllowNewTag) {
+    throw 'Release tag is missing; new tags require an explicitly prepared manual release.'
+}
+if ($null -ne $tagCommit -and $tagCommit -cne $Commit) {
     throw 'Remote tag moved or differs from artifact source.'
 }
 $assets = @()
@@ -35,6 +39,7 @@ $repoResult = Invoke-WebRequest -Uri "$api/repos/$Repository" -Headers $headers 
 if ($repoResult.StatusCode -ne 200) { throw "Cannot authenticate/read release repository: HTTP $($repoResult.StatusCode)." }
 $response = Invoke-WebRequest -Uri "$api/repos/$Repository/releases/tags/$Tag" -Headers $headers -SkipHttpErrorCheck
 if ($response.StatusCode -eq 200) {
+    if ($null -eq $tagCommit) { throw 'Existing release has no source tag; automatic repair is not permitted.' }
     $release = $response.Content | ConvertFrom-Json
     if ($release.tag_name -cne $Tag -or $release.draft -or $release.prerelease) { throw 'Existing release has incompatible state.' }
     if (@($release.assets).Count -ne $assets.Count) { throw 'Existing release assets differ; immutable releases are never clobbered.' }
@@ -57,6 +62,10 @@ if ($response.StatusCode -eq 200) {
     Write-Output "Release $Tag already contains these exact verified assets; no changes made."
 }
 elseif ($response.StatusCode -eq 404) {
+    if ($null -eq $tagCommit) {
+        Invoke-ReleaseGit push origin "${Commit}:refs/tags/$Tag"
+        if ((Get-RemoteReleaseCommit $Tag) -cne $Commit) { throw 'New release tag differs from verified artifact source.' }
+    }
     & gh release create $Tag @($assets.FullName) --repo $Repository --verify-tag --target $Commit `
         --title "Window Gather $Tag" --generate-notes
     if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed; no update/clobber fallback is permitted.' }

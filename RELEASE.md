@@ -39,16 +39,27 @@ After this pipeline is reviewed and present on the intended source commit:
 ```powershell
 git tag v2.1.0
 git push origin v2.1.0
-# Or rerun an EXISTING tag explicitly:
+# Or release manually (a new tag uses the selected workflow commit):
 gh workflow run release.yml -f tag=v2.1.0 -f artifact_signing=disabled
 ```
 
 No tag, remote push or actual GitHub Release is created by local packaging.
 The workflow triggers on pushed `v*` tags and supports manual dispatch with
 required `tag` and `artifact_signing` (`auto`, `enabled`, `disabled`) inputs.
-Manual dispatch resolves the requested tag and checks out its exact commit
-in every test/build/package/release job, not the dispatch branch's source.
+For an existing tag, manual dispatch resolves it and checks out its exact
+commit in every test/build/package/release job, not the dispatch branch's source.
+For a new tag, it pins the dispatch event's full commit SHA in every job.
+The final publication job creates that tag only after quality gates, final
+package verification and GitHub authentication succeed. A normal non-force
+tag push reserves the exact source identity; concurrent conflicting creation
+fails rather than moving or replacing a tag. No tag is created during preparation.
 Tags from before this pipeline exists cannot use its packaging scripts.
+
+This matches the reference's manual first-release capability, but avoids its
+unconditional branch checkout and asset-clobber fallback. A missing tag is
+distinguished from Git authentication/transport failure; only a missing tag
+on a manual dispatch may use the dispatch SHA. Tag push events must still
+resolve their existing tag and match the event source.
 
 The workflow gates both RIDs on portable tests, dependency checks, coverage,
 method CRAP, release contracts, frontend builds and both core mutation gates.
@@ -61,8 +72,8 @@ job with `id-token: write`; only final publication receives `contents: write`.
 Azure actions are pinned to the reference's immutable SHAs.
 
 The final job verifies both archives and their exact committed source, writes
-`SHA256SUMS.txt`, checks that the remote tag still identifies the artifact source,
-and creates `Window Gather vX.Y.Z` with generated notes. Authentication/API errors
+`SHA256SUMS.txt`, checks (or reserves a new manually requested tag for) the exact
+artifact source, and creates `Window Gather vX.Y.Z` with generated notes. Authentication/API errors
 fail rather than being treated as an absent release.
 Existing assets are **immutable**: an identical rerun does nothing, and any
 changed/missing/additional asset fails without `--clobber`. A partial publication
@@ -153,7 +164,13 @@ are configured and a real signing run is explicitly authorized.
 `scripts\Test-Release.ps1` runs in the ordinary verification pipeline and uses
 mocked network/GitHub commands for publication contracts. It covers strict
 version bounds/overflow, signing policies, archive identity/hashes, repeatable
-entry timestamps, auth failures and immutable reruns. Local packaging must also
+entry timestamps, manual first releases, annotated/existing tag source selection,
+tag-creation races, auth failures and immutable reruns. Local packaging must also
 exercise a tag override different from the development version and both RIDs.
 Real signing, hosted Actions execution and clean-machine startup are distinct
 checks; local metadata/package validation does not establish those claims.
+
+An old failed run's **Re-run** button retains its original workflow/source SHA.
+After a pipeline correction, dispatch a new run from the corrected branch instead.
+Manual dispatch with a new tag is a real release request: it can create a tag
+and publish assets after the gates pass, not merely validate the pipeline.

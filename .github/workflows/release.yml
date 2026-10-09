@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable tag, for example v2.1.0
+        description: Stable release tag; a new tag uses the selected workflow commit
         required: true
         type: string
       artifact_signing:
@@ -32,6 +32,7 @@ jobs:
       assembly_version: ${{ steps.prepare.outputs.assembly_version }}
       commit: ${{ steps.prepare.outputs.commit }}
       signing_enabled: ${{ steps.prepare.outputs.signing_enabled }}
+      new_tag: ${{ steps.prepare.outputs.new_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,14 +50,12 @@ jobs:
           . .\scripts\Release.Common.ps1
           $version = Get-ReleaseVersion $env:CANDIDATE_TAG
           $signed = Get-SigningPolicy $env:SIGNING_MODE $env:REPOSITORY_SIGNING_ENABLED
-          Invoke-ReleaseGit fetch --no-tags origin "refs/tags/$($version.Tag):refs/window-gather/requested-tag"
-          $commit = Invoke-ReleaseGit rev-parse 'refs/window-gather/requested-tag^{commit}'
-          if ($env:EVENT_NAME -eq 'push' -and $commit -cne (Invoke-ReleaseGit rev-parse "$($env:EVENT_SHA)^{commit}")) {
-            throw 'Push event and release tag identify different source.'
-          }
+          $source = Get-ReleaseSource $version.Tag $env:EVENT_NAME $env:EVENT_SHA
+          $commit = $source.Commit
           @("release_tag=$($version.Tag)", "version=$($version.Version)",
             "assembly_version=$($version.AssemblyVersion)", "commit=$commit",
-            "signing_enabled=$($signed.ToString().ToLowerInvariant())") |
+            "signing_enabled=$($signed.ToString().ToLowerInvariant())",
+            "new_tag=$($source.NewTag.ToString().ToLowerInvariant())") |
             Add-Content -LiteralPath $env:GITHUB_OUTPUT
 
   verify:
@@ -243,4 +242,5 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
           SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY
+          NEW_RELEASE_TAG: ${{ needs.prepare.outputs.new_tag }}
+        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY -AllowNewTag:($env:NEW_RELEASE_TAG -eq 'true')

@@ -97,14 +97,32 @@ try {
     $global:WindowGatherReleaseTestState.ghCalls = 0
     $global:WindowGatherReleaseTestState.tamperDownload = $false
     $global:WindowGatherReleaseTestState.partialAssets = $false
+    $global:WindowGatherReleaseTestState.tagStatus = 0
+    $global:WindowGatherReleaseTestState.tagObject = $commit
+    $global:WindowGatherReleaseTestState.tagPushes = 0
+    $global:WindowGatherReleaseTestState.pushConflict = $false
     function git {
         $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'ls-remote') {
+            $global:LASTEXITCODE = $global:WindowGatherReleaseTestState.tagStatus
+            if ($global:LASTEXITCODE -eq 0) { return "$($global:WindowGatherReleaseTestState.tagObject)`trefs/tags/$($global:WindowGatherReleaseTestState.tag)" }
+            return
+        }
+        if ($args[0] -eq 'push') {
+            if ($global:WindowGatherReleaseTestState.pushConflict) { $global:LASTEXITCODE = 1; return }
+            $global:WindowGatherReleaseTestState.tagPushes++
+            $global:WindowGatherReleaseTestState.tagStatus = 0
+            $global:WindowGatherReleaseTestState.tagObject = $global:WindowGatherReleaseTestState.commit
+            $global:WindowGatherReleaseTestState.remoteCommit = $global:WindowGatherReleaseTestState.commit
+            return
+        }
         if ($args[0] -eq '-C' -and $args[2] -eq 'archive') {
             & $global:WindowGatherReleaseTestState.gitExecutable @args
             return
         }
         if ($args[0] -eq 'rev-parse') {
-            if ($args[1] -eq 'HEAD') { return $global:WindowGatherReleaseTestState.commit }
+            if ($args[1] -eq 'HEAD' -or $args[1] -eq "$($global:WindowGatherReleaseTestState.commit)^{commit}") { return $global:WindowGatherReleaseTestState.commit }
+            if ($args[1] -eq 'refs/window-gather/release-source') { return $global:WindowGatherReleaseTestState.tagObject }
             return $global:WindowGatherReleaseTestState.remoteCommit
         }
         if ($args[0] -ne 'fetch') { throw "Unexpected mocked git invocation: $args" }
@@ -139,6 +157,25 @@ try {
     $env:GH_TOKEN = 'synthetic-not-a-credential'
     try {
         $publisher = Join-Path $PSScriptRoot 'Publish-GitHubRelease.ps1'
+        $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
+        Check (-not $source.NewTag -and $source.Commit -ceq $commit) 'existing manual tag source'
+        $global:WindowGatherReleaseTestState.remoteCommit = 'a' * 40
+        $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
+        Check ($source.Commit -ceq ('a' * 40)) 'existing tag takes precedence over dispatch branch'
+        Reject { Get-ReleaseSource $version.Tag push $commit } 'push source differs from tag'
+        $global:WindowGatherReleaseTestState.remoteCommit = $commit
+        $global:WindowGatherReleaseTestState.tagStatus = 2
+        $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
+        Check ($source.NewTag -and $source.Commit -ceq $commit) 'missing manual tag pins dispatch SHA without creating tag'
+        Reject { Get-ReleaseSource $version.Tag push $commit } 'missing pushed tag'
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary } 'new tag requires manual authorization'
+        $global:WindowGatherReleaseTestState.tagStatus = 128
+        Reject { Get-ReleaseSource $version.Tag workflow_dispatch $commit } 'transport/auth failure is not missing tag'
+        $global:WindowGatherReleaseTestState.tagStatus = 0
+        $global:WindowGatherReleaseTestState.tagObject = 'b' * 40
+        $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
+        Check (-not $source.NewTag -and $source.Commit -ceq $commit) 'annotated tag is peeled to commit'
+        $global:WindowGatherReleaseTestState.tagObject = $commit
         & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary
         Check ($global:WindowGatherReleaseTestState.ghCalls -eq 1) '404 creates exactly once'
         $global:WindowGatherReleaseTestState.releaseStatus = 200
@@ -160,6 +197,19 @@ try {
         $global:WindowGatherReleaseTestState.remoteCommit = 'a' * 40
         Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary } 'moved tag'
         Check ($global:WindowGatherReleaseTestState.ghCalls -eq 1) 'no mutation after auth/identity failures'
+        $global:WindowGatherReleaseTestState.remoteCommit = $commit
+        $global:WindowGatherReleaseTestState.tagStatus = 2
+        $global:WindowGatherReleaseTestState.releaseStatus = 404
+        $global:WindowGatherReleaseTestState.repoStatus = 403
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -AllowNewTag } 'auth failure cannot create a tag'
+        Check ($global:WindowGatherReleaseTestState.tagPushes -eq 0) 'preparation/auth failures never create tags'
+        $global:WindowGatherReleaseTestState.repoStatus = 200
+        $global:WindowGatherReleaseTestState.pushConflict = $true
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -AllowNewTag } 'concurrent tag creation cannot be overwritten'
+        Check ($global:WindowGatherReleaseTestState.ghCalls -eq 1) 'tag race stops release publication'
+        $global:WindowGatherReleaseTestState.pushConflict = $false
+        & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -AllowNewTag
+        Check ($global:WindowGatherReleaseTestState.tagPushes -eq 1 -and $global:WindowGatherReleaseTestState.ghCalls -eq 2) 'manual first release creates exact source tag only after validation'
     }
     finally { $env:GH_TOKEN = $token; Remove-Item Function:\git, Function:\gh, Function:\Invoke-WebRequest }
     Write-Output "PASS $($global:WindowGatherReleaseTestState.checks) release version/signing/archive/source/publication contract checks."

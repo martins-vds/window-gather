@@ -31,6 +31,40 @@ function Invoke-ReleaseGit {
     return $result
 }
 
+function Get-RemoteReleaseCommit([string]$Tag) {
+    $null = Get-ReleaseVersion $Tag
+    $ref = "refs/tags/$Tag"
+    $remote = @(& git ls-remote --exit-code --refs origin $ref)
+    if ($LASTEXITCODE -eq 2) { return $null }
+    if ($LASTEXITCODE -ne 0) { throw "Cannot inspect remote release tag $Tag (git exit $LASTEXITCODE)." }
+    if ($remote.Count -ne 1) { throw 'Unexpected remote tag response.' }
+    $fields = $remote[0] -split '\s+'
+    if ($fields.Count -ne 2 -or $fields[0] -cnotmatch '\A[0-9a-f]{40}\z' -or $fields[1] -cne $ref) {
+        throw 'Invalid remote tag identity.'
+    }
+    Invoke-ReleaseGit fetch --no-tags origin "${ref}:refs/window-gather/release-source"
+    if ((Invoke-ReleaseGit rev-parse 'refs/window-gather/release-source') -cne $fields[0]) {
+        throw 'Release tag changed while resolving source.'
+    }
+    return Invoke-ReleaseGit rev-parse 'refs/window-gather/release-source^{commit}'
+}
+
+function Get-ReleaseSource([string]$Tag, [string]$EventName, [string]$EventSha) {
+    if ($EventName -cnotin @('push', 'workflow_dispatch') -or $EventSha -cnotmatch '\A[0-9a-f]{40}\z') {
+        throw 'Invalid release event/source identity.'
+    }
+    $commit = Get-RemoteReleaseCommit $Tag
+    $newTag = $null -eq $commit
+    if ($newTag) {
+        if ($EventName -eq 'push') { throw 'Pushed release tag is missing from origin.' }
+        $commit = Invoke-ReleaseGit rev-parse "$EventSha^{commit}"
+    }
+    if ($EventName -eq 'push' -and $commit -cne (Invoke-ReleaseGit rev-parse "$EventSha^{commit}")) {
+        throw 'Push event and release tag identify different source.'
+    }
+    [pscustomobject]@{ Commit = $commit; NewTag = $newTag }
+}
+
 function Get-ReleaseHash([string]$Path) {
     (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }

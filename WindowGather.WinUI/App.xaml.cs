@@ -30,7 +30,11 @@ public partial class App : Microsoft.UI.Xaml.Application
 #if UI_PARITY_TEST
         try
         {
+#if UI_PREVIEW
+            await UiParityTests.RunAsync(interactivePreview: true);
+#else
             await UiParityTests.RunAsync();
+#endif
         }
         catch (Exception error)
         {

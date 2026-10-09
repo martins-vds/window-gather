@@ -60,6 +60,11 @@ Successful operations show their summary once. The details box appears only
 when there are errors or unresolved windows; it is hidden after a successful
 operation.
 
+The native interface follows your Windows app theme, including a matching title
+bar and system accent color. The monitor preview highlights the selected display
+and shows resolutions where space permits. Gather/Restore appear side by side
+in wider windows and stack in compact windows; the shortcut footer stays pinned.
+
 ## Recovery and behavior
 
 The return record is saved **before moving windows**, at
@@ -130,7 +135,8 @@ Build the isolated WinUI XAML parity harness with:
 
 ```powershell
 dotnet publish .\WindowGather.WinUI\WindowGather.WinUI.csproj -c Release `
-  -p:UiTestBuild=true -o .\artifacts\ui-test
+  -p:UiTestBuild=true -p:UiPreviewBuild=false `
+  "-p:NuGetLockFilePath=obj\packages.ui-test.lock.json" -o .\artifacts\ui-test
 ```
 
 Run its executable on an interactive desktop. It uses fake desktop services and
@@ -139,3 +145,9 @@ It does not touch your recovery file or move your application windows. This test
 composition is compile-time-only and is absent from ordinary builds/publishing.
 Native movement and native shell tests remain separate; passing the fake UI
 harness alone is not evidence of native placement correctness.
+
+For an interactive design preview, build with both `UiTestBuild=true` and
+`UiPreviewBuild=true` into a separate output directory. Its title explicitly
+identifies simulated windows; all operations and shortcut changes use disposable
+test state. Use the footer's Exit button to end the preview. Neither flag is
+enabled in ordinary builds or release publishing.

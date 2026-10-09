@@ -13,6 +13,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">ARM64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' != 'win-arm64'">x64</PlatformTarget>
     <DefineConstants Condition="'$(UiTestBuild)' == 'true'">$(DefineConstants);UI_PARITY_TEST</DefineConstants>
+    <DefineConstants Condition="'$(UiTestBuild)' == 'true' and '$(UiPreviewBuild)' == 'true'">$(DefineConstants);UI_PREVIEW</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>WindowGather.WinUI</AssemblyName>
   </PropertyGroup>

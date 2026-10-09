@@ -3,34 +3,55 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Window Gather">
-  <Grid x:Name="Root" Padding="24" RowSpacing="16">
+  <Grid x:Name="Root" Padding="24" RowSpacing="16" Background="Transparent" SizeChanged="RootSizeChanged">
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
-    <ScrollViewer x:Name="MainScroll" VerticalScrollBarVisibility="Auto">
+    <ScrollViewer x:Name="MainScroll" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
       <StackPanel Spacing="16">
-        <TextBlock Text="Bring your windows here" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" />
-        <TextBlock Text="Gather from other displays. Restore only what you borrowed.&#10;Windows already on the destination stay untouched."
-                   TextWrapping="Wrap" />
-        <Canvas x:Name="Preview" Height="160" SizeChanged="PreviewSizeChanged"
-                AutomationProperties.Name="Clickable destination monitor preview" />
-        <ComboBox x:Name="DisplayPicker" HorizontalAlignment="Stretch"
-                  AutomationProperties.Name="Destination display"
-                  ItemsSource="{x:Bind ViewModel.Displays, Mode=OneWay}"
-                  SelectedItem="{x:Bind ViewModel.SelectedDisplay, Mode=TwoWay}"
-                  IsEnabled="{x:Bind ViewModel.CanSelect, Mode=OneWay}" />
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Identify displays" Command="{x:Bind ViewModel.IdentifyCommand}" />
-          <Button Content="Refresh displays" Command="{x:Bind ViewModel.RefreshCommand}" />
-        </StackPanel>
         <StackPanel Spacing="8">
-          <Button Content="Gather to selected display" Style="{StaticResource AccentButtonStyle}"
-                  Command="{x:Bind ViewModel.GatherCommand}" />
-          <Button Content="Restore borrowed windows" Command="{x:Bind ViewModel.RestoreCommand}" />
+          <TextBlock Text="Bring your windows here" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+          <TextBlock Text="Gather from other displays. Restore only what you borrowed.&#10;Windows already on the destination stay untouched."
+                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
         </StackPanel>
-        <TextBlock Text="{x:Bind ViewModel.Summary, Mode=OneWay}" TextWrapping="Wrap"
-                   AutomationProperties.LiveSetting="Polite" />
+        <StackPanel Spacing="12">
+          <TextBlock Text="Destination display" Style="{StaticResource BodyStrongTextBlockStyle}" />
+          <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                  CornerRadius="8" Padding="16">
+            <Canvas x:Name="Preview" Height="160" SizeChanged="PreviewSizeChanged"
+                    AutomationProperties.Name="Clickable destination monitor preview" />
+          </Border>
+          <ComboBox x:Name="DisplayPicker" HorizontalAlignment="Stretch"
+                    AutomationProperties.Name="Destination display"
+                    ItemsSource="{x:Bind ViewModel.Displays, Mode=OneWay}"
+                    SelectedItem="{x:Bind ViewModel.SelectedDisplay, Mode=TwoWay}"
+                    IsEnabled="{x:Bind ViewModel.CanSelect, Mode=OneWay}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Identify displays" Command="{x:Bind ViewModel.IdentifyCommand}" />
+            <Button Content="Refresh displays" Command="{x:Bind ViewModel.RefreshCommand}" />
+          </StackPanel>
+        </StackPanel>
+        <Grid ColumnSpacing="8" RowSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <Button x:Name="GatherButton" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                  Content="Gather to selected display" Style="{StaticResource AccentButtonStyle}"
+                  Command="{x:Bind ViewModel.GatherCommand}" />
+          <Button x:Name="RestoreButton" Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                  Style="{x:Bind RecoveryButtonStyle(ViewModel.HasRecovery), Mode=OneWay}"
+                  Content="Restore borrowed windows" Command="{x:Bind ViewModel.RestoreCommand}" />
+        </Grid>
+        <InfoBar x:Name="OperationStatus" IsOpen="True" IsClosable="False"
+                 Severity="{x:Bind StatusSeverity(ViewModel.HasDetails), Mode=OneWay}"
+                 Message="{x:Bind ViewModel.Summary, Mode=OneWay}" AutomationProperties.LiveSetting="Polite" />
         <TextBox x:Name="Details" Text="{x:Bind ViewModel.Details, Mode=OneWay}"
                  Visibility="{x:Bind ViewModel.HasDetails, Mode=OneWay}"
                  AutomationProperties.Name="Operation details and errors"
@@ -38,16 +59,31 @@
                  ScrollViewer.VerticalScrollBarVisibility="Auto" />
       </StackPanel>
     </ScrollViewer>
-    <StackPanel Grid.Row="1" Spacing="10">
-      <TextBlock Text="{x:Bind ViewModel.ShortcutReference, Mode=OneWay}" TextWrapping="Wrap" />
+    <Border Grid.Row="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="0,1,0,0" Padding="0,16,0,0">
+    <StackPanel x:Name="Footer" Spacing="12">
+      <TextBlock Text="{x:Bind ViewModel.ShortcutReference, Mode=OneWay}" TextWrapping="Wrap"
+                 FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       <InfoBar IsOpen="{x:Bind ViewModel.HasShortcutWarning, Mode=OneWay}" IsClosable="False"
                Severity="Warning" Message="{x:Bind ViewModel.ShortcutWarning, Mode=OneWay}" />
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Change shortcuts..." Command="{x:Bind ViewModel.ChangeShortcutsCommand}" />
-        <Button Content="Forget recovery..." Click="ForgetClicked"
+      <Grid ColumnSpacing="8" RowSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Button x:Name="ShortcutsButton" Grid.ColumnSpan="3" HorizontalAlignment="Stretch"
+                Content="Change shortcuts..." Command="{x:Bind ViewModel.ChangeShortcutsCommand}" />
+        <Button x:Name="ForgetButton" Grid.Row="1" HorizontalAlignment="Left" Content="Forget recovery..." Click="ForgetClicked"
                 IsEnabled="{x:Bind ViewModel.CanRestoreRecovery, Mode=OneWay}" />
-        <Button Content="Exit" Click="ExitClicked" IsEnabled="{x:Bind NotBusy(ViewModel.IsBusy), Mode=OneWay}" />
-      </StackPanel>
+        <Button x:Name="ExitButton" Grid.Row="1" Grid.Column="2" Content="Exit" Click="ExitClicked"
+                IsEnabled="{x:Bind NotBusy(ViewModel.IsBusy), Mode=OneWay}" />
+      </Grid>
     </StackPanel>
+    </Border>
   </Grid>
 </Window>

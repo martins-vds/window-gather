@@ -1,6 +1,6 @@
 using System.ComponentModel;
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
@@ -26,10 +26,13 @@ public sealed partial class MainWindow : Window
         Version version = typeof(App).Assembly.GetName().Version
             ?? throw new InvalidOperationException("Application version metadata is missing.");
         Title = $"Window Gather {version.ToString(3)}";
+        SystemBackdrop = new MicaBackdrop();
+        Root.ActualThemeChanged += (_, _) => UpdateTitleBarTheme();
+        UpdateTitleBarTheme();
         double scale = NativeMessage.GetWindowDpi(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
         AppWindow.Resize(new SizeInt32(Math.Min(work.Width, (int)Math.Round(760 * scale)),
-            Math.Min(work.Height, (int)Math.Round(900 * scale))));
+            Math.Min(work.Height, (int)Math.Round(780 * scale))));
         AppWindow.Closing += (_, args) =>
         {
             if (!exiting) { args.Cancel = true; AppWindow.Hide(); }
@@ -39,8 +42,28 @@ public sealed partial class MainWindow : Window
     }
 
     public bool NotBusy(bool busy) => !busy;
+    public InfoBarSeverity StatusSeverity(bool hasDetails) => hasDetails ? InfoBarSeverity.Warning : InfoBarSeverity.Informational;
+    public Style RecoveryButtonStyle(bool hasRecovery) =>
+        (Style)Microsoft.UI.Xaml.Application.Current.Resources[hasRecovery ? "AccentButtonStyle" : "DefaultButtonStyle"];
     public void ShowWindow() { AppWindow.Show(); Activate(); }
     public void ExitWindow() { exiting = true; ViewModel.PropertyChanged -= ModelChanged; Close(); }
+
+    private void UpdateTitleBarTheme() =>
+        AppWindow.TitleBar.PreferredTheme = Root.ActualTheme == ElementTheme.Dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
+
+    private void RootSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        bool wide = Root.ActualWidth >= 640;
+        Grid.SetColumnSpan(GatherButton, wide ? 1 : 2);
+        Grid.SetRow(RestoreButton, wide ? 0 : 1);
+        Grid.SetColumn(RestoreButton, wide ? 1 : 0);
+        Grid.SetColumnSpan(RestoreButton, wide ? 1 : 2);
+        Grid.SetColumnSpan(ShortcutsButton, wide ? 1 : 3);
+        ShortcutsButton.HorizontalAlignment = wide ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        Grid.SetRow(ForgetButton, wide ? 0 : 1);
+        Grid.SetColumn(ForgetButton, wide ? 1 : 0);
+        Grid.SetRow(ExitButton, wide ? 0 : 1);
+    }
 
     private void ModelChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -66,17 +89,22 @@ public sealed partial class MainWindow : Window
         double offsetY = (Preview.Height - height * scale) / 2;
         foreach (Display display in ViewModel.Displays)
         {
+            bool selected = display.Id == ViewModel.SelectedDisplay?.Id;
             var button = new Button
             {
-                Content = display.DeviceName.Replace(@"\\.\", ""),
+                Tag = display,
                 Width = Math.Max(1, display.Bounds.Width * scale - 4),
                 Height = Math.Max(1, display.Bounds.Height * scale - 4),
-                Padding = new Thickness(2), FontSize = 12,
+                MinWidth = 0, MinHeight = 0, Padding = new Thickness(4),
                 IsEnabled = ViewModel.CanSelect,
-                BorderThickness = new Thickness(display.Id == ViewModel.SelectedDisplay?.Id ? 3 : 1)
+                BorderThickness = new Thickness(selected ? 3 : 1),
+                Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources[selected ? "AccentButtonStyle" : "DefaultButtonStyle"]
             };
-            if (display.Id == ViewModel.SelectedDisplay?.Id)
-                button.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 0, 90, 158));
+            var labels = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center };
+            labels.Children.Add(MonitorLabel(display.DeviceName.Replace(@"\\.\", ""), 13, button, true));
+            if (button.Width >= 95 && button.Height >= 50)
+                labels.Children.Add(MonitorLabel($"{display.Bounds.Width} x {display.Bounds.Height}", 12, button, false));
+            button.Content = labels;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Select {display}");
             ToolTipService.SetToolTip(button, display.ToString());
             button.Click += (_, _) => { if (ViewModel.CanSelect) ViewModel.SelectedDisplay = display; };
@@ -84,6 +112,21 @@ public sealed partial class MainWindow : Window
             Canvas.SetTop(button, offsetY + (display.Bounds.Top - top) * scale + 2);
             Preview.Children.Add(button);
         }
+    }
+
+    private static TextBlock MonitorLabel(string text, double size, Button button, bool strong)
+    {
+        var label = new TextBlock
+        {
+            Text = text, FontSize = size, FontWeight = strong ? FontWeights.SemiBold : FontWeights.Normal,
+            TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = Math.Max(1, button.Width - 14),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        label.SetBinding(TextBlock.ForegroundProperty, new Binding
+        {
+            Source = button, Path = new PropertyPath(nameof(Button.Foreground)), Mode = BindingMode.OneWay
+        });
+        return label;
     }
 
     private async void ForgetClicked(object sender, RoutedEventArgs args) => await ConfirmForgetAsync();
@@ -119,17 +162,17 @@ public sealed partial class MainWindow : Window
             ShortcutSettings settings = getSettings();
             var gather = new ShortcutEditorViewModel(settings.Gather);
             var restore = new ShortcutEditorViewModel(settings.Restore);
-            var panel = new StackPanel { Spacing = 16, MinWidth = 340 };
+            var panel = new StackPanel { Spacing = 16 };
             panel.Children.Add(new TextBlock
             {
                 Text = "Changes apply immediately and are saved for restart.", TextWrapping = TextWrapping.Wrap
             });
             panel.Children.Add(Editor("Gather onto the display under your pointer", gather));
             panel.Children.Add(Editor("Restore borrowed windows", restore));
-            panel.Children.Add(new TextBlock
+            panel.Children.Add(new InfoBar
             {
-                Text = "Windows reserves F12 for debuggers. The legacy Restore default may fail to register; choose another key if needed.",
-                TextWrapping = TextWrapping.Wrap
+                Message = "Windows reserves F12 for debuggers. The legacy Restore default may fail to register; choose another key if needed.",
+                IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning
             });
             var defaults = new Button { Content = "Use defaults" };
             defaults.Click += (_, _) =>
@@ -138,7 +181,7 @@ public sealed partial class MainWindow : Window
                 restore.SetShortcut(ShortcutSettings.Defaults.Restore);
             };
             panel.Children.Add(defaults);
-            var error = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            var error = new InfoBar { IsClosable = false, Severity = InfoBarSeverity.Error };
             panel.Children.Add(error);
             var dialog = new ContentDialog
             {
@@ -156,9 +199,10 @@ public sealed partial class MainWindow : Window
                     replacement.Validate();
                     OperationReply reply = await ViewModel.SaveShortcutsAsync(replacement);
                     args.Cancel = !reply.Accepted || reply.Problems.Count > 0;
-                    error.Text = string.Join("\n", reply.Problems.Count > 0 ? reply.Problems : new[] { reply.Summary });
+                    error.Message = string.Join("\n", reply.Problems.Count > 0 ? reply.Problems : new[] { reply.Summary });
+                    error.IsOpen = args.Cancel;
                 }
-                catch (Exception failure) { args.Cancel = true; error.Text = failure.Message; }
+                catch (Exception failure) { args.Cancel = true; error.Message = failure.Message; error.IsOpen = true; }
                 finally { dialog.IsPrimaryButtonEnabled = true; deferral.Complete(); }
             };
             await dialog.ShowAsync();
@@ -169,7 +213,11 @@ public sealed partial class MainWindow : Window
     private static StackPanel Editor(string title, ShortcutEditorViewModel model)
     {
         var panel = new StackPanel { Spacing = 8, DataContext = model };
-        panel.Children.Add(new TextBlock { Text = title, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock
+        {
+            Text = title, TextWrapping = TextWrapping.Wrap,
+            Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["BodyStrongTextBlockStyle"]
+        });
         var modifiers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         foreach (string name in new[] { "Ctrl", "Alt", "Shift", "Win" })
         {

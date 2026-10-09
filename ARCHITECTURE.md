@@ -67,6 +67,45 @@ seconds. Local verification simulated taskbar recreation; it did not kill
 Explorer. The legacy Ctrl+Alt+F12 default is preserved, with its documented
 Windows debugger reservation shown in settings.
 
+## Agreed monitor-disconnect policy (pending implementation)
+
+The user selected automatic return of available borrowed windows when the
+gathering destination disconnects. This is the next behavior contract, not a
+description of the current implementation: currently Restore is explicit and
+requires the original physical bounds/work area.
+
+| Situation during an active session | Required behavior |
+| --- | --- |
+| An origin disconnects; destination remains connected | Leave borrowed windows on the destination and preserve their return records. |
+| The destination disconnects | Automatically return only borrowed windows whose original physical monitors are available. |
+| An original monitor is unavailable | Do not choose a substitute origin. Leave the window where Windows places it, keep its recovery entry and report it as pending. |
+| An available origin has a different layout/work area | Adapt the saved placement relative to that monitor's current work area, fit normal windows safely and preserve minimized/maximized state. |
+| A missing monitor reconnects | Refresh availability and allow explicit Restore of pending windows; do not unexpectedly move them on reconnect. |
+
+The original recovery snapshot must not be replaced with Windows' temporary
+post-disconnect positions. Destination-resident and newly opened windows remain
+outside the session, even if Windows itself relocates them. Window Gather cannot
+prevent Windows from repositioning windows when the desktop topology changes.
+
+Automatic return uses the same operation gate, identity checks, native
+no-activation/no-z-order behavior and save-before-unmark completion ordering as
+explicit Restore. Process only a settled, freshly validated topology. If a
+topology change arrives during another operation, retain a pending topology
+recheck and evaluate after that operation finishes; do not interrupt it or lose
+the notification to a busy rejection.
+
+Successful returns are resolved durably; missing, unsafe or failed returns stay
+retryable. Do not infer monitor removal from enumeration failure. While recovery
+remains, block a new Gather until Restore completes or the user explicitly
+confirms Forget. Show one return summary and a persistent pending-recovery
+warning where applicable. A restart must retain unresolved entries.
+
+Acceptance cases include origin-only removal, destination-only removal, removal
+of both destination and origins, partial return, changed origin layout,
+reconnection without automatic movement, mid-operation topology changes,
+enumeration/storage/native failures and restart with pending recovery. All
+automatic paths must exclude resident/unrelated windows.
+
 ## Toolchain and quality gates
 
 `global.json` pins SDK 10.0.401, and `Directory.Build.props` selects stable

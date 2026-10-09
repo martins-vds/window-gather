@@ -71,6 +71,15 @@ or Azure login. Required signing runs in a separate protected `artifact-signing`
 job with `id-token: write`; only final publication receives `contents: write`.
 Azure actions are pinned to the reference's immutable SHAs.
 
+All action references are pinned to verified stable release commits (reviewed
+2026-10-09). The JavaScript actions use Node 24 on GitHub-hosted
+`windows-latest`; self-hosted runners would need at least runner 2.327.1.
+Release preparation/publication retain credentials for authenticated Git
+fetch/push. Artifact uploads explicitly keep `archive: true`,
+preserving named build/release containers instead of direct-file uploads;
+downloads decompress that outer container and fail on digest mismatch.
+The inner distributable ZIP and its checksums are unchanged.
+
 The final job verifies both archives and their exact committed source, writes
 `SHA256SUMS.txt`, checks (or reserves a new manually requested tag for) the exact
 artifact source, and creates `Window Gather vX.Y.Z` with generated notes. Authentication/API errors

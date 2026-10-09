@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)][string]$Commit,
     [Parameter(Mandatory)][string]$Repository,
     [string]$AssetDirectory = 'release-assets',
-    [switch]$AllowNewTag
+    [switch]$AllowNewTag,
+    [switch]$AutomaticToken,
+    [string]$DefaultBranch = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Release.Common.ps1')
@@ -20,6 +22,7 @@ if ($null -eq $tagCommit -and -not $AllowNewTag) {
 if ($null -ne $tagCommit -and $tagCommit -cne $Commit) {
     throw 'Remote tag moved or differs from artifact source.'
 }
+if ($null -eq $tagCommit -and $AutomaticToken) { Assert-AutomaticTagPermission $Commit $DefaultBranch }
 $assets = @()
 foreach ($runtime in @('win-x64', 'win-arm64')) {
     $path = Join-Path $AssetDirectory "window-gather-windows-$($runtime.Substring(4))-$Tag.zip"

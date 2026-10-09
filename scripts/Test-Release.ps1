@@ -101,8 +101,14 @@ try {
     $global:WindowGatherReleaseTestState.tagObject = $commit
     $global:WindowGatherReleaseTestState.tagPushes = 0
     $global:WindowGatherReleaseTestState.pushConflict = $false
+    $global:WindowGatherReleaseTestState.workflowDiff = 0
     function git {
         $global:LASTEXITCODE = 0
+        if ($args[0] -eq 'check-ref-format') { return }
+        if ($args[0] -eq 'diff') {
+            $global:LASTEXITCODE = $global:WindowGatherReleaseTestState.workflowDiff
+            return
+        }
         if ($args[0] -eq 'ls-remote') {
             $global:LASTEXITCODE = $global:WindowGatherReleaseTestState.tagStatus
             if ($global:LASTEXITCODE -eq 0) { return "$($global:WindowGatherReleaseTestState.tagObject)`trefs/tags/$($global:WindowGatherReleaseTestState.tag)" }
@@ -167,6 +173,15 @@ try {
         $global:WindowGatherReleaseTestState.tagStatus = 2
         $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
         Check ($source.NewTag -and $source.Commit -ceq $commit) 'missing manual tag pins dispatch SHA without creating tag'
+        Assert-AutomaticTagPermission $commit main
+        Check ($true) 'automatic token permits identical default-branch workflows'
+        $global:WindowGatherReleaseTestState.workflowDiff = 1
+        Reject { Assert-AutomaticTagPermission $commit main } 'automatic token blocks historical workflow changes'
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -AllowNewTag -AutomaticToken -DefaultBranch main } 'publication rechecks workflow permissions after builds'
+        Check ($global:WindowGatherReleaseTestState.tagPushes -eq 0 -and $global:WindowGatherReleaseTestState.ghCalls -eq 0) 'permission preflight prevents mutations'
+        $global:WindowGatherReleaseTestState.workflowDiff = 128
+        Reject { Assert-AutomaticTagPermission $commit main } 'permission inspection errors do not become success'
+        $global:WindowGatherReleaseTestState.workflowDiff = 0
         Reject { Get-ReleaseSource $version.Tag push $commit } 'missing pushed tag'
         Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary } 'new tag requires manual authorization'
         $global:WindowGatherReleaseTestState.tagStatus = 128

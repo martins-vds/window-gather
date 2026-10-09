@@ -65,6 +65,20 @@ function Get-ReleaseSource([string]$Tag, [string]$EventName, [string]$EventSha) 
     [pscustomobject]@{ Commit = $commit; NewTag = $newTag }
 }
 
+function Assert-AutomaticTagPermission([string]$Commit, [string]$DefaultBranch) {
+    if ($Commit -cnotmatch '\A[0-9a-f]{40}\z' -or -not $DefaultBranch) {
+        throw 'Automatic tag permission check requires source SHA and default branch.'
+    }
+    $ref = "refs/heads/$DefaultBranch"
+    Invoke-ReleaseGit check-ref-format $ref
+    Invoke-ReleaseGit fetch --no-tags origin "${ref}:refs/window-gather/default-release-source"
+    & git diff --quiet $Commit 'refs/window-gather/default-release-source' -- .github/workflows
+    if ($LASTEXITCODE -eq 1) {
+        throw "GITHUB_TOKEN cannot create a new tag for $Commit because its workflow files differ from $DefaultBranch. Dispatch a new release from current $DefaultBranch, or have an authorized maintainer create the exact source tag. No tag/source substitution or permission escalation is attempted."
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Automatic tag permission inspection failed (git exit $LASTEXITCODE)." }
+}
+
 function Get-ReleaseHash([string]$Path) {
     (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }

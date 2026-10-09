@@ -46,12 +46,14 @@ jobs:
           REPOSITORY_SIGNING_ENABLED: ${{ vars.AZURE_ARTIFACT_SIGNING_ENABLED }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           . .\scripts\Release.Common.ps1
           $version = Get-ReleaseVersion $env:CANDIDATE_TAG
           $signed = Get-SigningPolicy $env:SIGNING_MODE $env:REPOSITORY_SIGNING_ENABLED
           $source = Get-ReleaseSource $version.Tag $env:EVENT_NAME $env:EVENT_SHA
           $commit = $source.Commit
+          if ($source.NewTag) { Assert-AutomaticTagPermission $commit $env:DEFAULT_BRANCH }
           @("release_tag=$($version.Tag)", "version=$($version.Version)",
             "assembly_version=$($version.AssemblyVersion)", "commit=$commit",
             "signing_enabled=$($signed.ToString().ToLowerInvariant())",
@@ -252,4 +254,5 @@ jobs:
           SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_REPOSITORY: ${{ github.repository }}
           NEW_RELEASE_TAG: ${{ needs.prepare.outputs.new_tag }}
-        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY -AllowNewTag:($env:NEW_RELEASE_TAG -eq 'true')
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY -AllowNewTag:($env:NEW_RELEASE_TAG -eq 'true') -AutomaticToken -DefaultBranch $env:DEFAULT_BRANCH

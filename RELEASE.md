@@ -53,6 +53,14 @@ The final publication job creates that tag only after quality gates, final
 package verification and GitHub authentication succeed. A normal non-force
 tag push reserves the exact source identity; concurrent conflicting creation
 fails rather than moving or replacing a tag. No tag is created during preparation.
+For a new tag, both preparation and publication compare the source's workflow
+files with the current default branch. GitHub's automatic token cannot acquire
+`Workflows: write`; creating a tag for a different workflow revision is rejected
+even with `contents: write`. If main's workflows change during a release, the
+job fails with an actionable message rather than retargeting the artifacts.
+Dispatch a new run from current main, or let an authorized maintainer create
+the exact original source tag before retrying. Neither repository-wide write
+defaults nor a nonexistent YAML `workflows` permission fixes this restriction.
 Tags from before this pipeline exists cannot use its packaging scripts.
 
 This matches the reference's manual first-release capability, but avoids its

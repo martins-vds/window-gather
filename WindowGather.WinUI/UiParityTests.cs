@@ -30,6 +30,8 @@ internal static class UiParityTests
                 window.ExitRequested += () => exited.TrySetResult();
                 model.AttentionRequested += window.ShowWindow;
                 model.IdentifyRequested += () => model.ReportProblem("This UI preview uses simulated displays, not your physical monitors.");
+                CleanupTestState(directory);
+                Check(!Directory.Exists(directory), "Unused preview storage needs no cleanup.");
                 await model.ExecuteAsync(OperationKind.Refresh);
                 await exited.Task;
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"),
@@ -115,11 +117,17 @@ internal static class UiParityTests
         finally
         {
             shortcuts.Release();
-            foreach (string name in new[] { "session.json", "session.json.tmp", "shortcuts.json", "shortcuts.json.tmp" })
-                File.Delete(Path.Combine(directory, name));
-            if (Directory.Exists(directory)) Directory.Delete(directory);
+            CleanupTestState(directory);
             window.ExitWindow();
         }
+    }
+
+    private static void CleanupTestState(string directory)
+    {
+        if (!Directory.Exists(directory)) return;
+        foreach (string name in new[] { "session.json", "session.json.tmp", "shortcuts.json", "shortcuts.json.tmp" })
+            File.Delete(Path.Combine(directory, name));
+        Directory.Delete(directory);
     }
 
     private static async Task SettleAsync() => await Task.Delay(150);

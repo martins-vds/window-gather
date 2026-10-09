@@ -16,6 +16,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly ShortcutController shortcuts;
     private string loadWarning;
     private long appliedRevision = -1;
+    private long presentedCompletion = -1;
 
     public MainViewModel(OperationCoordinator coordinator, ShortcutController shortcuts,
         IUiDispatcher dispatcher, string loadWarning = "")
@@ -69,11 +70,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasShortcutWarning))]
     public partial string ShortcutWarning { get; set; } = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRecoveryWarning))]
+    public partial string RecoveryWarning { get; set; } = "";
 
     public bool CanSelect => !IsBusy && !HasRecovery;
     public bool CanRestoreRecovery => !IsBusy && HasRecovery;
     public bool HasDetails => Details.Length > 0;
     public bool HasShortcutWarning => ShortcutWarning.Length > 0;
+    public bool HasRecoveryWarning => RecoveryWarning.Length > 0;
     private bool CanGather() => CanSelect && SelectedDisplay is not null;
     private bool CanRestore() => !IsBusy && HasRecovery;
     private bool CanRefresh() => CanSelect;
@@ -97,6 +102,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         OperationReply reply = await coordinator.ExecuteAsync(kind, target).ConfigureAwait(false);
         Dispatch(() => Present(reply));
+    }
+
+    public async Task NotifyTopologyChangedAsync()
+    {
+        OperationReply? reply = await coordinator.NotifyTopologyChangedAsync().ConfigureAwait(false);
+        if (reply is not null) Dispatch(() => Present(reply, requestAttention: false));
     }
 
     public async Task<OperationReply> SaveShortcutsAsync(ShortcutSettings settings)
@@ -131,11 +142,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         AttentionRequested?.Invoke();
     }
 
-    private void Present(OperationReply reply)
+    private void Present(OperationReply reply, bool requestAttention = true)
     {
+        if (!reply.Announce || reply.CompletionOrder <= presentedCompletion) return;
+        presentedCompletion = reply.CompletionOrder;
         Summary = reply.Summary;
         Details = string.Join(Environment.NewLine, reply.Problems);
-        if (reply.Problems.Count > 0) AttentionRequested?.Invoke();
+        if (requestAttention && reply.Problems.Count > 0) AttentionRequested?.Invoke();
     }
 
     private void OnStateChanged(ApplicationState state) => Dispatch(() => ApplyState(state));
@@ -152,12 +165,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
         HasRecovery = state.HasRecovery;
         BorrowedCount = state.BorrowedCount;
+        RecoveryWarning = state.RecoveryWarning;
         SelectedDisplay = state.RecoveryTarget is { } target
             ? Displays.FirstOrDefault(d => d.Id == target.Id) ?? target
             : Displays.FirstOrDefault(d => d.Id == selected) ?? Displays.FirstOrDefault();
         IsBusy = state.IsBusy;
         IdentifyCommand.NotifyCanExecuteChanged();
-        if (IsBusy) Summary = "Working... Please wait before moving windows.";
+        if (IsBusy && !state.IsTopologyCheck) Summary = "Working... Please wait before moving windows.";
     }
 
     private void Dispatch(Action action)

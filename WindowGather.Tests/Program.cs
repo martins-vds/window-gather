@@ -58,12 +58,12 @@ internal static class Program
                 desktop.Displays.Add(A);
                 Check(engine.Restore().Completed == 1 && engine.Session is null);
             });
-            Test("changed layout is not mistaken for original", () =>
+            Test("changed origin layout adapts restoration on the same physical monitor", () =>
             {
                 var (desktop, _, engine) = Setup();
                 engine.Gather(B);
                 desktop.Displays[0] = A with { Bounds = new(-1920, -100, 0, 980) };
-                Check(engine.Restore().Problems.Count == 1 && desktop.Restored.Count == 0);
+                Check(engine.Restore().Completed == 1 && desktop.Restored.Count == 1);
             });
             Test("closed or replaced windows are not restored", () =>
             {
@@ -167,6 +167,7 @@ internal static class Program
         {
             store.Save(session);
             GatherSession loaded = store.Load()!;
+            Check(!loaded.AutomaticReturnAttempted);
             Check(loaded.Token == session.Token && loaded.Windows.Single() == session.Windows.Single());
             File.WriteAllText(Path.Combine(directory, "session.json"), "{ broken");
             Throws<JsonException>(() => store.Load());
@@ -225,6 +226,16 @@ internal static class Program
             using var original = JsonDocument.Parse(recovery);
             using var rewritten = JsonDocument.Parse(File.ReadAllText(sessionPath));
             Check(JsonElement.DeepEquals(original.RootElement, rewritten.RootElement), "Recovery field/value contract changed.");
+            store.Save(new GatherSession
+            {
+                Version = loaded.Version, Token = loaded.Token, CreatedUtc = loaded.CreatedUtc,
+                Target = loaded.Target, Windows = loaded.Windows, AutomaticReturnAttempted = true
+            });
+            GatherSession pending = store.Load()!;
+            Check(pending.AutomaticReturnAttempted && pending.Version == 1 &&
+                pending.Token == loaded.Token && pending.CreatedUtc == loaded.CreatedUtc &&
+                pending.Target == loaded.Target && pending.Windows.SequenceEqual(loaded.Windows),
+                "Automatic-return bookkeeping must preserve all legacy return fields.");
             string shortcutPath = Path.Combine(directory, "shortcuts.json");
             File.WriteAllText(shortcutPath, shortcutJson);
             var shortcuts = new ShortcutStore(directory);
@@ -303,6 +314,19 @@ internal static class Program
             Application.DoEvents();
             Check(problem is null, problem);
             shell.Update(new(Array.AsReadOnly(displays.ToArray()), null, 0, false, false, 2));
+            int topologyChanges = 0;
+            shell.TopologyChanged += () => topologyChanges++;
+            for (int i = 0; i < 3; i++) ShellNative.PostMessage(shell.MessageWindow, 0x007E, 32, 0);
+            ShellNative.PostMessage(shell.MessageWindow, 0x001A, 47, 0);
+            Application.DoEvents();
+            Check(topologyChanges == 0, "Display messages must be debounced.");
+            var settling = System.Diagnostics.Stopwatch.StartNew();
+            while (settling.ElapsedMilliseconds < 850)
+            {
+                Application.DoEvents();
+                Thread.Sleep(10);
+            }
+            Check(topologyChanges == 1 && problem is null, "Display/work-area broadcasts must coalesce into one recheck.");
             controller.Release();
             nint receiver = shell.MessageWindow;
             shell.Dispose();
@@ -361,6 +385,33 @@ internal static class Program
             Form[] last = identifier.Overlays.ToArray();
             identifier.Dispose();
             Check(last.All(f => f.IsDisposed));
+        });
+        Test("native restoration revalidates physical layout and identity on owned windows", () =>
+        {
+            foreach (FormWindowState state in new[] { FormWindowState.Normal, FormWindowState.Minimized, FormWindowState.Maximized })
+            {
+                using Form owned = TestForm(displays[0], "restore validation");
+                owned.WindowState = state;
+                Application.DoEvents();
+                SavedWindow original = native.CaptureWindow(owned.Handle);
+                owned.WindowState = FormWindowState.Normal;
+                owned.Location = new Point(owned.Left + 30, owned.Top + 30);
+                Application.DoEvents();
+                SavedWindow moved = native.CaptureWindow(owned.Handle);
+                Throws<InvalidOperationException>(() => native.Restore(original with { ClassName = "ReplacedWindow" }));
+                Throws<InvalidOperationException>(() => native.Restore(original with
+                {
+                    Origin = original.Origin with { WorkArea = new(0, 0, 100, 100) }
+                }));
+                Check(native.CaptureWindow(owned.Handle).Placement.Normal == moved.Placement.Normal,
+                    "Rejected restore must not move the window.");
+                Pump(() => { native.Restore(original); return true; });
+                SavedWindow returned = native.CaptureWindow(owned.Handle);
+                Check(returned.Origin.Id == original.Origin.Id &&
+                    returned.Placement.Normal == original.Placement.Normal &&
+                    Geometry.State(returned.Placement.ShowCommand) == Geometry.State(original.Placement.ShowCommand),
+                    "Native restoration must preserve placement and normal/minimized/maximized state.");
+            }
         });
         if (displays.Count < 2)
         {

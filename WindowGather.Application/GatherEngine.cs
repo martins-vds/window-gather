@@ -6,6 +6,8 @@ public sealed class GatherEngine
 {
     private readonly IDesktop desktop;
     private readonly ISessionStore store;
+    private bool topologyObserved;
+    private string? automaticReturnToken;
     public GatherSession? Session { get; private set; }
 
     public GatherEngine(IDesktop desktop, ISessionStore store)
@@ -15,14 +17,22 @@ public sealed class GatherEngine
         Session = store.Load();
     }
 
-    public IReadOnlyList<Display> GetDisplays() => desktop.GetDisplays();
+    public IReadOnlyList<Display> GetDisplays()
+    {
+        IReadOnlyList<Display> displays = desktop.GetDisplays();
+        if (displays.Any(d => string.IsNullOrWhiteSpace(d.Id) || d.Bounds.Width <= 0 ||
+            d.Bounds.Height <= 0 || d.WorkArea.Width <= 0 || d.WorkArea.Height <= 0) ||
+            displays.Select(d => d.Id).Distinct(StringComparer.Ordinal).Count() != displays.Count)
+            throw new InvalidOperationException("The display inventory is invalid or ambiguous. Retry after the layout settles.");
+        return displays;
+    }
     public Display GetPointerDisplay() => desktop.GetPointerDisplay();
 
     public OperationResult Gather(Display target)
     {
         if (Session is not null)
             throw new InvalidOperationException("Restore the current session before gathering again.");
-        if (!desktop.GetDisplays().Any(d => d.Id == target.Id && d.Bounds == target.Bounds &&
+        if (!GetDisplays().Any(d => d.Id == target.Id && d.Bounds == target.Bounds &&
             d.WorkArea == target.WorkArea))
             throw new InvalidOperationException("The selected display changed. Refresh the display list.");
         string token = Guid.NewGuid().ToString("D");
@@ -41,6 +51,7 @@ public sealed class GatherEngine
             throw;
         }
         Session = session;
+        topologyObserved = true;
         int completed = 0;
         var problems = new List<string>(scan.Warnings);
         foreach (SavedWindow window in imported)
@@ -60,11 +71,54 @@ public sealed class GatherEngine
             $"Gathered {completed} of {imported.Count} windows. Windows already on the target were left untouched.");
     }
 
-    public OperationResult Restore()
+    public OperationResult ReturnAfterDestinationLoss(IReadOnlyList<Display> displays)
+    {
+        OperationResult unchanged = new(0, 0, [], "") { Announce = false };
+        if (Session is not { AutomaticReturnAttempted: false } session) return unchanged;
+        bool destinationPresent = displays.Any(d => d.Id == session.Target.Id);
+        if (!topologyObserved)
+        {
+            topologyObserved = true;
+            // Recovery loaded with its destination already absent is pending, not a new disconnect.
+            if (!destinationPresent) automaticReturnToken = session.Token;
+        }
+        if (destinationPresent || automaticReturnToken == session.Token ||
+            GetDisplays().Any(d => d.Id == session.Target.Id))
+            return unchanged;
+
+        automaticReturnToken = session.Token;
+        var attempted = new GatherSession
+        {
+            Version = session.Version, Token = session.Token, Target = session.Target,
+            CreatedUtc = session.CreatedUtc, Windows = session.Windows.ToList(),
+            AutomaticReturnAttempted = true
+        };
+        // Persist the one-shot decision before moving anything; reconnect/restart must not retry it.
+        store.Save(attempted);
+        Session = attempted;
+        OperationResult result = Restore(displays.Select(d => d.Id).ToHashSet(StringComparer.Ordinal));
+        return result with { Summary = "Destination disconnected. " + result.Summary };
+    }
+
+    public string RecoveryWarning(IReadOnlyList<Display> displays)
+    {
+        if (Session is not { } session) return "";
+        if (session.AutomaticReturnAttempted || automaticReturnToken == session.Token)
+            return $"{session.Windows.Count} borrowed windows still need restoration. " +
+                "Reconnect unavailable origin displays, then click Restore. Reconnection will not move windows automatically.";
+        int unavailable = session.Windows.Count(w => !displays.Any(d => d.Id == w.Origin.Id));
+        return unavailable == 0 ? "" :
+            $"{unavailable} borrowed windows have an unavailable origin display. " +
+            "Recovery is saved; reconnect the display before restoring.";
+    }
+
+    public OperationResult Restore() => Restore(null);
+
+    private OperationResult Restore(IReadOnlySet<string>? automaticOrigins)
     {
         GatherSession session = Session ??
             throw new InvalidOperationException("There is no active gather session.");
-        IReadOnlyList<Display> displays = desktop.GetDisplays();
+        _ = GetDisplays();
         var remaining = new List<SavedWindow>();
         var problems = new List<string>();
         int completed = 0;
@@ -74,15 +128,29 @@ public sealed class GatherEngine
             try
             {
                 if (!desktop.Matches(window, session.Token)) { skipped++; continue; }
+                if (automaticOrigins is not null && !automaticOrigins.Contains(window.Origin.Id))
+                    throw new InvalidOperationException(
+                        $"The origin {window.Origin.DeviceName} was unavailable when the destination disconnected. " +
+                        "Reconnect it, then click Restore.");
+                IReadOnlyList<Display> displays = GetDisplays();
                 Display? origin = displays.FirstOrDefault(d => d.Id == window.Origin.Id);
                 if (origin is null)
                     throw new InvalidOperationException(
                         $"Reconnect {window.Origin.DeviceName}, then click Restore again.");
+                SavedWindow returning = window;
                 if (origin.Bounds != window.Origin.Bounds || origin.WorkArea != window.Origin.WorkArea)
-                    throw new InvalidOperationException(
-                        $"The layout of {window.Origin.DeviceName} changed. Restore its original " +
-                        "position, resolution, and taskbar arrangement, then retry.");
-                desktop.Restore(window);
+                {
+                    returning = window with
+                    {
+                        Origin = origin,
+                        Placement = window.Placement with
+                        {
+                            Normal = Geometry.FitNormal(window.Placement, window.Origin, origin),
+                            Min = new(-1, -1), Max = new(-1, -1)
+                        }
+                    };
+                }
+                desktop.Restore(returning);
                 completed++;
             }
             catch (Exception error) when (IsWindowError(error))
@@ -96,7 +164,8 @@ public sealed class GatherEngine
         else store.Save(new GatherSession
         {
             Token = session.Token, Target = session.Target,
-            CreatedUtc = session.CreatedUtc, Windows = remaining
+            Version = session.Version, CreatedUtc = session.CreatedUtc, Windows = remaining,
+            AutomaticReturnAttempted = session.AutomaticReturnAttempted
         });
         List<SavedWindow> resolved = session.Windows.Except(remaining).ToList();
         session.Windows = remaining;

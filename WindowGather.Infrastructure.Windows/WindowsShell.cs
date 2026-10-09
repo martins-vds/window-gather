@@ -23,6 +23,8 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     public event Action<ShellAction>? ActionRequested;
     public event Action<Display>? GatherRequested;
     public event Action<string>? Problem;
+    public event Action? TopologyChanged;
+    private const nuint TopologyTimer = 1;
     internal nint MessageWindow => window;
 
     public WindowsShell(Func<Action, Task> dispatch)
@@ -59,6 +61,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
         canRestore = !state.IsBusy && state.HasRecovery;
         var data = IconData();
         data.Tip = state.HasRecovery ? $"Window Gather - {state.BorrowedCount} borrowed windows" : "Window Gather - ready";
+        if (state.RecoveryWarning.Length > 0) data.Tip = "Window Gather - recovery/display check needs attention";
         if (!ShellNative.ShellNotifyIcon(1, ref data))
             throw Error("Cannot update the notification-area icon");
     }
@@ -94,6 +97,16 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
         try
         {
             if (message == 0x0312) HotkeyPressed?.Invoke((int)wParam);
+            else if (message == 0x007E || (message == 0x001A && wParam == 47))
+            {
+                if (ShellNative.SetTimer(window, TopologyTimer, 500, 0) == 0)
+                    throw Error("Cannot schedule a display-layout recheck");
+            }
+            else if (message == 0x0113 && wParam == TopologyTimer)
+            {
+                ShellNative.KillTimer(window, TopologyTimer);
+                TopologyChanged?.Invoke();
+            }
             else if (message == taskbarCreated) AddIcon();
             else if (message == 0x8001)
             {
@@ -143,6 +156,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     public void Dispose()
     {
         if (window == 0) return;
+        ShellNative.KillTimer(window, TopologyTimer);
         if (added)
         {
             var data = IconData();
@@ -205,4 +219,6 @@ internal static class ShellNative
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(nint handle);
     [DllImport("user32.dll")] internal static extern uint TrackPopupMenu(nint menu, uint flags, int x, int y, int reserved, nint owner, nint rectangle);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint handle, uint message, nuint wParam, nint lParam);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern nuint SetTimer(nint handle, nuint id, uint milliseconds, nint callback);
+    [DllImport("user32.dll")] internal static extern bool KillTimer(nint handle, nuint id);
 }

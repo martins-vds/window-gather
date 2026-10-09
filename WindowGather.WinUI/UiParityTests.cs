@@ -74,6 +74,28 @@ internal static class UiParityTests
                 "Successful restore resets commands and hides error details.");
             Check(Descendants(root).OfType<TextBlock>().Count(t => t.Text.StartsWith("Restored ")) == 1,
                 "Exactly one success summary.");
+            await model.GatherCommand.ExecuteAsync(null);
+            Display destination = desktop.Displays[1];
+            desktop.Displays.Remove(destination);
+            desktop.FailRestore = true;
+            int attention = 0;
+            model.AttentionRequested += () => attention++;
+            await model.NotifyTopologyChangedAsync();
+            await SettleAsync();
+            var recoveryWarning = (InfoBar)root.FindName("RecoveryWarning");
+            Check(recoveryWarning.IsOpen && recoveryWarning.Message.Contains("Reconnection will not move") &&
+                store.Load()!.AutomaticReturnAttempted && details.Visibility == Visibility.Visible,
+                "Destination loss keeps failed returns durable and visibly pending.");
+            Check(attention == 0 && model.Summary.StartsWith("Destination disconnected."),
+                "Automatic return shows one summary without requesting foreground activation.");
+            desktop.Displays.Add(destination);
+            desktop.FailRestore = false;
+            int returned = desktop.RestoreCount;
+            await model.NotifyTopologyChangedAsync();
+            await SettleAsync();
+            Check(desktop.RestoreCount == returned && recoveryWarning.IsOpen && restore.IsEnabled,
+                "Reconnect enables explicit return without automatic window movement.");
+            model.ShortcutWarning = "Simulated shortcut-registration warning.";
             double scale = NativeMessage.GetWindowDpi(WinRT.Interop.WindowNative.GetWindowHandle(window)) / 96.0;
             window.AppWindow.Resize(new((int)(520 * scale), (int)(650 * scale)));
             await SettleAsync();
@@ -85,6 +107,11 @@ internal static class UiParityTests
                 Check(bounds.Left >= 0 && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1,
                     "Compact footer keeps " + name + " visible.");
             }
+            await model.RestoreCommand.ExecuteAsync(null);
+            await SettleAsync();
+            Check(!recoveryWarning.IsOpen && !model.HasDetails && desktop.ResidentUnchanged,
+                "Explicit return clears pending warning and leaves residents unchanged.");
+            model.ShortcutWarning = "";
             root.RequestedTheme = ElementTheme.Dark;
             await SettleAsync();
             Check(root.ActualTheme == ElementTheme.Dark && preview.Children.OfType<Button>().All(b => b.Style is not null),
@@ -106,7 +133,8 @@ internal static class UiParityTests
             Check(window.AppWindow.IsVisible && model.ShortcutReference == reference, "Reopen preserves state.");
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"),
                 "PASS WinUI XAML selection, command invalidation, recovery lock, persistent recovery, resident exclusion, " +
-                "partial restore, error visibility, pinned footer, one summary, compact layout, light/dark themes, restart, close-to-hide and reopen.");
+                "partial restore, destination disconnect, durable pending warning, reconnect without movement, " +
+                "error visibility, pinned footer with simultaneous warnings, one summary, compact layout, light/dark themes, restart, close-to-hide and reopen.");
         }
         catch (Exception error)
         {
@@ -153,7 +181,7 @@ internal static class UiParityTests
 
     private sealed class TestDesktop : IDesktop
     {
-        public IReadOnlyList<Display> Displays { get; } = [
+        public List<Display> Displays { get; } = [
             new("test-a", @"\\.\DISPLAY1", "Desk", new(-1920, 0, 0, 1080), new(-1920, 0, 0, 1040)),
             new("test-b", @"\\.\DISPLAY4", "Destination", new(0, 0, 1920, 1080), new(0, 40, 1920, 1080))];
         private readonly Dictionary<long, string> markers = [];
@@ -169,6 +197,7 @@ internal static class UiParityTests
             };
         }
         public bool FailRestore { get; set; }
+        public int RestoreCount { get; private set; }
         public bool ResidentUnchanged => windows[2] == resident;
         public IReadOnlyList<Display> GetDisplays() => Displays;
         public Display GetPointerDisplay() => Displays[1];
@@ -184,6 +213,7 @@ internal static class UiParityTests
         public void Restore(SavedWindow window)
         {
             if (FailRestore) throw new InvalidOperationException("Simulated restoration failure.");
+            RestoreCount++;
             windows[window.Handle] = window;
         }
     }

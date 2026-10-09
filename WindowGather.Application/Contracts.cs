@@ -9,9 +9,13 @@ public sealed class GatherSession
     public DateTime CreatedUtc { get; init; } = DateTime.UtcNow;
     public required Display Target { get; init; }
     public required List<SavedWindow> Windows { get; set; }
+    public bool AutomaticReturnAttempted { get; init; }
 }
 
-public sealed record OperationResult(int Completed, int Skipped, List<string> Problems, string Summary);
+public sealed record OperationResult(int Completed, int Skipped, List<string> Problems, string Summary)
+{
+    public bool Announce { get; init; } = true;
+}
 
 public interface IDesktop
 {

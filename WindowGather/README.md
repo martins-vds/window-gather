@@ -75,7 +75,10 @@ gather is blocked until you restore or explicitly forget the existing session.
 Normal, maximized, and minimized window states are preserved. Minimized windows
 remain minimized; their restore destination moves to the chosen monitor. Large
 normal windows are fitted into the target's work area where the application
-permits. Restoration uses the original window placement.
+permits. Restoration uses the original placement when the physical origin's
+layout is unchanged. If its position, resolution or work area changed, Restore
+fits the saved normal rectangle relative to the current work area while keeping
+the saved minimized/maximized state. It does not replace the original return record.
 
 Only visible, non-cloaked top-level application windows on the current virtual
 desktop are considered. The shell, taskbars, tool/no-activate windows, and Window
@@ -85,10 +88,24 @@ per-window session markers plus process identity checks prevent matching a
 different window merely because its title or handle resembles the original.
 No window titles, browser URLs, or document contents are stored.
 
-Missing origin displays and changed display arrangements retain recovery
-entries. Reconnect the original display or restore its original position,
-resolution, and taskbar arrangement, then retry Restore. Physical display
-identity is used rather than relying only on enumeration numbers.
+In the current WinUI source, disconnecting the gathering destination
+automatically returns borrowed windows to available original physical monitors.
+If only an origin disconnects, the app leaves gathered windows on the destination.
+Windows itself may reposition windows during either change; Window Gather cannot
+prevent that.
+
+Unavailable origins and failed returns remain saved, with a persistent warning.
+No substitute origin is chosen. Reconnecting monitors refreshes availability but
+does **not** automatically move pending windows: click **Restore borrowed windows**
+to retry. Automatic return waits for the layout to settle and never interrupts
+an operation already moving windows. It neither brings the app to the foreground
+nor moves destination-resident/new windows.
+
+Recovery loaded at startup with its destination already absent also requires
+explicit Restore. An unavailable or unreadable display inventory is not treated
+as a disconnect. Physical display identity is used instead of enumeration numbers.
+These changes are in current source; the existing 2.0.1 release artifact and
+legacy release binaries have not been replaced.
 
 **Forget recovery** requires confirmation. It leaves windows where they are and
 removes the return record. **Exit** does not forget recovery.
@@ -105,8 +122,9 @@ removes the return record. **Exit** does not forget recovery.
   restored. Normal placement and minimized/maximized state are restored.
 - Some full-screen, custom, fixed-size, or modal applications control their own
   placement. A failed move is reported, and its recovery record is retained.
-- Changing DPI scaling or monitor topology mid-session may prevent exact
-  placement recovery. Keep the display setup stable for the gather/restore cycle.
+- Changing DPI scaling or monitor topology can prevent exact original pixel
+  placement. Changed work areas are fitted safely; original logical-size/DPI and
+  application-specific placement restoration are not guaranteed.
 - A minimized window's "maximize when next restored" behavior depends on the
   placement flags Windows exposes; ordinary minimized/maximized states are
   preserved, but unusual application-specific restore behavior is not guaranteed.

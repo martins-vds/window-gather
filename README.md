@@ -21,6 +21,9 @@ The 2.0.0 release replaces the presentation with WinUI 3/MVVM while retaining
 the existing recovery and shortcut formats. The legacy frontend stays at 1.2.0.
 Version 2.0.1 adds the polished native layout, system-aware styling and responsive
 monitor/action presentation without changing recovery or window movement.
+Current source additionally handles destination disconnects with one automatic
+return attempt and durable pending recovery; reconnects require explicit Restore.
+The already-generated 2.0.1 release binaries remain unchanged.
 
 ## Build
 

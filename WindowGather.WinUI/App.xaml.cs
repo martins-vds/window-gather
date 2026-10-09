@@ -12,6 +12,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private NativeDisplayIdentifier? identifier;
     private ShortcutController? shortcuts;
     private MainViewModel? model;
+    private OperationCoordinator? coordinator;
 #endif
 
     public App()
@@ -74,7 +75,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             shell = new WindowsShell(dispatcher.InvokeAsync);
             identifier = new NativeDisplayIdentifier();
             shortcuts = new ShortcutController(shell, startup.store);
-            var coordinator = new OperationCoordinator(startup.engine);
+            coordinator = new OperationCoordinator(startup.engine);
             model = new MainViewModel(coordinator, shortcuts, dispatcher, startup.warning);
             model.UpdateShortcuts(shortcuts.Activate(startup.settings));
             window = new MainWindow(model, () => shortcuts.Settings);
@@ -104,6 +105,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 }
             };
             shell.Problem += model.ReportProblem;
+            shell.TopologyChanged += async () => await model.NotifyTopologyChangedAsync();
             coordinator.StateChanged += state =>
             {
                 if (!dispatcher.TryEnqueue(() =>
@@ -118,6 +120,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             if (coordinator.State.HasRecovery)
                 model.Summary = $"Recovery available: {coordinator.State.BorrowedCount} borrowed windows. Click Restore to send them home.";
             else if (!model.HasDetails) model.Summary = "Ready. Choose the display you want to work on.";
+            await model.NotifyTopologyChangedAsync();
         }
         catch (Exception error)
         {
@@ -130,7 +133,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 #if !UI_PARITY_TEST
     private void ExitApplication()
     {
-        if (model?.IsBusy == true) return;
+        if (model?.IsBusy == true || coordinator?.HasWorkPending == true) return;
         try { shortcuts?.Release(); }
         catch (Exception error) { NativeMessage.Show(error.Message, "Cannot release shortcuts"); return; }
         identifier?.Dispose();

@@ -76,12 +76,17 @@ public sealed class SessionStore(string directory) : ISessionStore
 
     private sealed record SessionData(int Version, string Token, DateTime CreatedUtc, DisplayData Target, List<WindowData> Windows)
     {
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool AutomaticReturnAttempted { get; init; }
+
         public GatherSession ToSession() => new()
         {
             Version = Version, Token = Token, CreatedUtc = CreatedUtc, Target = Target.ToDisplay(),
-            Windows = Windows.Select(w => w.ToWindow()).ToList()
+            Windows = Windows.Select(w => w.ToWindow()).ToList(),
+            AutomaticReturnAttempted = AutomaticReturnAttempted
         };
         public static SessionData From(GatherSession session) => new(session.Version, session.Token,
-            session.CreatedUtc, DisplayData.From(session.Target), session.Windows.Select(WindowData.From).ToList());
+            session.CreatedUtc, DisplayData.From(session.Target), session.Windows.Select(WindowData.From).ToList())
+            { AutomaticReturnAttempted = session.AutomaticReturnAttempted };
     }
 }

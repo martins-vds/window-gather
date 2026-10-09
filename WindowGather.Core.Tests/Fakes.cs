@@ -38,7 +38,13 @@ internal sealed class Desktop(List<string> log) : IDesktop
     public Action? BeforeMove { get; set; }
     public List<string> Warnings { get; } = [];
     public bool FailDisplays { get; set; }
-    public IReadOnlyList<Display> GetDisplays() => FailDisplays ? throw new InvalidOperationException("Display failure") : Displays;
+    public Action? BeforeReadDisplays { get; set; }
+    public Action<SavedWindow>? BeforeRestore { get; set; }
+    public IReadOnlyList<Display> GetDisplays()
+    {
+        BeforeReadDisplays?.Invoke();
+        return FailDisplays ? throw new InvalidOperationException("Display failure") : Displays.ToArray();
+    }
     public Display GetPointerDisplay() { PointerReads++; return Pointer; }
     public WindowScan CaptureWindows(string token, Display target)
     {
@@ -69,6 +75,7 @@ internal sealed class Desktop(List<string> log) : IDesktop
     public void Restore(SavedWindow window)
     {
         log.Add("restore");
+        BeforeRestore?.Invoke(window);
         if (window.Handle == FailRestore) throw new InvalidOperationException("Restore failure");
         Restored.Add(window.Handle);
         Windows[window.Handle] = window;

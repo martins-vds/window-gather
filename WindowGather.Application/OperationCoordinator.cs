@@ -5,16 +5,29 @@ namespace WindowGather;
 public enum OperationKind { Refresh, GatherSelected, GatherPointer, Restore, Forget }
 
 public sealed record ApplicationState(ReadOnlyCollection<Display> Displays, Display? RecoveryTarget,
-    int BorrowedCount, bool HasRecovery, bool IsBusy, long Revision);
+    int BorrowedCount, bool HasRecovery, bool IsBusy, long Revision)
+{
+    public string RecoveryWarning { get; init; } = "";
+    public bool IsTopologyCheck { get; init; }
+}
 
-public sealed record OperationReply(bool Accepted, string Summary, ReadOnlyCollection<string> Problems);
+public sealed record OperationReply(bool Accepted, string Summary, ReadOnlyCollection<string> Problems)
+{
+    public bool Announce { get; init; } = true;
+    public long CompletionOrder { get; init; }
+}
 
 public sealed class OperationCoordinator
 {
     private readonly GatherEngine engine;
-    private int entered;
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim topologyGate = new(1, 1);
+    private long topologyRequested, topologyChecked;
     private long revision;
+    private long completionOrder;
     private ApplicationState state;
+    private string topologyProblem = "";
+    private bool hasDisplaySnapshot;
 
     public OperationCoordinator(GatherEngine engine)
     {
@@ -23,6 +36,8 @@ public sealed class OperationCoordinator
     }
 
     public ApplicationState State => Volatile.Read(ref state);
+    public bool HasWorkPending => gate.CurrentCount == 0 ||
+        Volatile.Read(ref topologyRequested) != Volatile.Read(ref topologyChecked);
     public event Action<ApplicationState>? StateChanged;
 
     public Task<OperationReply> ExecuteAsync(OperationKind kind, Display? target = null) =>
@@ -39,35 +54,81 @@ public sealed class OperationCoordinator
 
     public Task<OperationReply> RunAsync(Func<OperationResult> operation)
     {
-        if (Interlocked.CompareExchange(ref entered, 1, 0) != 0)
+        if (!gate.Wait(0))
             return Task.FromResult(new OperationReply(false, "Window Gather is busy. Retry after the current operation.",
-                Array.AsReadOnly(Array.Empty<string>())));
+                Array.AsReadOnly(Array.Empty<string>())) { CompletionOrder = Interlocked.Increment(ref completionOrder) });
 
         try { Publish(State with { IsBusy = true, Revision = Interlocked.Increment(ref revision) }); }
-        catch { Interlocked.Exchange(ref entered, 0); throw; }
-        return RunOwnedAsync(operation);
+        catch { gate.Release(); throw; }
+        return RunOwnedAsync(() => Task.FromResult(operation()));
     }
 
-    private async Task<OperationReply> RunOwnedAsync(Func<OperationResult> operation)
+    public async Task<OperationReply?> NotifyTopologyChangedAsync()
+    {
+        long requested = Interlocked.Increment(ref topologyRequested);
+        long processed = requested;
+        await topologyGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (requested <= Volatile.Read(ref topologyChecked)) return null;
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                Publish(State with { IsBusy = true, IsTopologyCheck = true, Revision = Interlocked.Increment(ref revision) });
+            }
+            catch { gate.Release(); throw; }
+            return await RunOwnedAsync(async () =>
+            {
+                IReadOnlyList<Display> previous = engine.GetDisplays().ToArray();
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    long sampled = Volatile.Read(ref topologyRequested);
+                    processed = sampled;
+                    await Task.Delay(250).ConfigureAwait(false);
+                    IReadOnlyList<Display> current = engine.GetDisplays().ToArray();
+                    if (SameTopology(previous, current) && sampled == Volatile.Read(ref topologyRequested))
+                        return engine.ReturnAfterDestinationLoss(current);
+                    previous = current;
+                }
+                throw new InvalidOperationException("Display layout is still changing. Recovery is saved; refresh or retry after it settles.");
+            }, topology: true).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref topologyChecked, Math.Max(processed, Volatile.Read(ref topologyChecked)));
+            topologyGate.Release();
+        }
+    }
+
+    private static bool SameTopology(IReadOnlyList<Display> first, IReadOnlyList<Display> second) =>
+        first.Select(d => (d.Id, d.Bounds, d.WorkArea)).OrderBy(d => d.Id, StringComparer.Ordinal)
+            .SequenceEqual(second.Select(d => (d.Id, d.Bounds, d.WorkArea)).OrderBy(d => d.Id, StringComparer.Ordinal));
+
+    private async Task<OperationReply> RunOwnedAsync(Func<Task<OperationResult>> operation, bool topology = false)
     {
         OperationReply reply;
         IReadOnlyList<Display> displays = State.Displays;
         try
         {
-            reply = await Task.Run(() =>
+            reply = await Task.Run(async () =>
             {
-                OperationResult result = operation();
+                OperationResult result = await operation().ConfigureAwait(false);
                 displays = engine.GetDisplays();
-                return new OperationReply(true, result.Summary, Array.AsReadOnly(result.Problems.ToArray()));
+                hasDisplaySnapshot = true;
+                topologyProblem = "";
+                return new OperationReply(true, result.Summary, Array.AsReadOnly(result.Problems.ToArray()))
+                    { Announce = result.Announce };
             }).ConfigureAwait(false);
         }
         catch (Exception error)
         {
-            reply = new(true, "The operation could not finish. Recovery data has not been discarded.",
+            if (topology) topologyProblem = "Automatic return could not finish: " + error.Message + " Click Restore to retry.";
+            reply = new(true, "The operation could not finish. Check the details before retrying.",
                 Array.AsReadOnly(new[] { $"{error.GetType().Name}: {error.Message}" }));
         }
+        reply = reply with { CompletionOrder = Interlocked.Increment(ref completionOrder) };
         try { Publish(Snapshot(displays, false)); }
-        finally { Interlocked.Exchange(ref entered, 0); }
+        finally { gate.Release(); }
         return reply;
     }
 
@@ -79,7 +140,11 @@ public sealed class OperationCoordinator
 
     private ApplicationState Snapshot(IReadOnlyList<Display> displays, bool busy) => new(
         Array.AsReadOnly(displays.ToArray()), engine.Session?.Target, engine.Session?.Windows.Count ?? 0,
-        engine.Session is not null, busy, Interlocked.Increment(ref revision));
+        engine.Session is not null, busy, Interlocked.Increment(ref revision))
+    {
+        RecoveryWarning = topologyProblem.Length > 0 ? topologyProblem :
+            hasDisplaySnapshot ? engine.RecoveryWarning(displays) : "",
+    };
 
     private void Publish(ApplicationState next)
     {

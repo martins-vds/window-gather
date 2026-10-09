@@ -6,6 +6,213 @@ namespace WindowGather.Core.Tests;
 public sealed class CoordinatorTests
 {
     [Fact]
+    public async Task TopologyCheckLocksCommandsAndSeparatesItsObservationsWithoutInferringAnUnknownInventory()
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        engine.Gather(Fixture.B);
+        var coordinator = new OperationCoordinator(engine);
+        Assert.Equal("", coordinator.State.RecoveryWarning);
+        int reads = 0;
+        long first = 0;
+        desktop.BeforeReadDisplays = () =>
+        {
+            Assert.True(coordinator.State.IsBusy);
+            Assert.True(coordinator.State.IsTopologyCheck);
+            if (++reads == 1) first = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (reads == 2)
+                Assert.True(System.Diagnostics.Stopwatch.GetElapsedTime(first) >= TimeSpan.FromMilliseconds(200),
+                    "Matching observations must be separated by a settling interval.");
+        };
+        OperationReply reply = (await coordinator.NotifyTopologyChangedAsync())!;
+        Assert.Empty(reply.Problems);
+        Assert.False(reply.Announce);
+        Assert.Equal("", reply.Summary);
+        Assert.Equal(3, reads);
+        Assert.False(coordinator.HasWorkPending);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OutOfOrderRepliesCannotReplaceAutomaticReturnSummaryAndPassiveChecksKeepGatherSummary(bool disconnect)
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        var backend = new Hotkeys();
+        var dispatcher = new Dispatcher { Queued = true };
+        using var model = new MainViewModel(coordinator,
+            new ShortcutController(backend, new ShortcutStore(backend)), dispatcher);
+        await model.ExecuteAsync(OperationKind.GatherSelected, Fixture.B);
+        if (disconnect) desktop.Displays.Remove(Fixture.B);
+        await model.NotifyTopologyChangedAsync();
+        dispatcher.Pending.Reverse();
+        dispatcher.Drain();
+        Assert.StartsWith(disconnect ? "Destination disconnected." : "Gathered 1", model.Summary);
+        Assert.Equal(!disconnect, model.HasRecovery);
+        Assert.False(model.IsBusy);
+        Assert.False(model.HasDetails);
+    }
+
+    [Theory]
+    [InlineData(OperationKind.GatherSelected)]
+    [InlineData(OperationKind.Restore)]
+    public async Task TopologyChangesDuringAnOperationAreRetainedAndBurstsCoalesce(OperationKind active)
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        if (active == OperationKind.Restore) engine.Gather(Fixture.B);
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Block()
+        {
+            started.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Test operation was not released");
+        }
+        desktop.BeforeMove = Block;
+        desktop.BeforeRestore = _ => Block();
+        Task<OperationReply> operation = coordinator.ExecuteAsync(active, Fixture.B);
+        Task<OperationReply?>[] changes;
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            desktop.Displays.Remove(Fixture.B);
+            changes = Enumerable.Range(0, 5).Select(_ => coordinator.NotifyTopologyChangedAsync()).ToArray();
+            Assert.True(coordinator.HasWorkPending);
+            Assert.All(changes, task => Assert.False(task.IsCompleted));
+            Assert.False((await coordinator.ExecuteAsync(OperationKind.Forget)).Accepted);
+        }
+        finally { release.Set(); }
+        Assert.Empty((await operation).Problems);
+        var replies = await Task.WhenAll(changes).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(replies, r => r is not null);
+        Assert.Equal(new long[] { 1 }, desktop.Restored);
+        Assert.False(coordinator.State.HasRecovery);
+        Assert.False(coordinator.HasWorkPending);
+        Assert.False(coordinator.State.IsBusy);
+        Assert.Single(coordinator.State.Displays);
+    }
+
+    [Fact]
+    public async Task TransientRemovalDoesNotMoveAndEnumerationFailureIsVisibleNotRemoval()
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        await coordinator.ExecuteAsync(OperationKind.GatherSelected, Fixture.B);
+        int reads = 0;
+        desktop.Displays.Remove(Fixture.B);
+        desktop.BeforeReadDisplays = () => { if (++reads == 2) desktop.Displays.Add(Fixture.B); };
+        Assert.False((await coordinator.NotifyTopologyChangedAsync())!.Announce);
+        Assert.Empty(desktop.Restored);
+        Assert.False(engine.Session!.AutomaticReturnAttempted);
+        desktop.BeforeReadDisplays = null;
+        desktop.FailDisplays = true;
+        var failure = (await coordinator.NotifyTopologyChangedAsync())!;
+        Assert.Contains("Display failure", Assert.Single(failure.Problems));
+        Assert.Contains("Automatic return could not finish", coordinator.State.RecoveryWarning);
+        Assert.Empty(desktop.Restored);
+        Assert.False(engine.Session.AutomaticReturnAttempted);
+        desktop.FailDisplays = false;
+        await coordinator.NotifyTopologyChangedAsync();
+        Assert.Equal("", coordinator.State.RecoveryWarning);
+        Assert.False(coordinator.HasWorkPending);
+    }
+
+    [Fact]
+    public async Task UnsettledTopologyFailsWithoutMovingAndNextSignalCanRetry()
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        engine.Gather(Fixture.B);
+        desktop.Displays.Remove(Fixture.B);
+        int reads = 0;
+        desktop.BeforeReadDisplays = () =>
+            desktop.Displays[0] = Fixture.A with { Bounds = new(-1920, ++reads, 0, 1080 + reads) };
+        var failure = (await coordinator.NotifyTopologyChangedAsync())!;
+        Assert.Contains("still changing", Assert.Single(failure.Problems));
+        Assert.Equal(6, reads);
+        Assert.False(engine.Session!.AutomaticReturnAttempted);
+        Assert.Empty(desktop.Restored);
+        desktop.BeforeReadDisplays = null;
+        desktop.Displays[0] = Fixture.A;
+        Assert.Empty((await coordinator.NotifyTopologyChangedAsync())!.Problems);
+        Assert.Single(desktop.Restored);
+    }
+
+    [Fact]
+    public async Task SignalArrivingAfterFinalSnapshotIsNotLost()
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        engine.Gather(Fixture.B);
+        Task<OperationReply?>? late = null;
+        coordinator.StateChanged += state =>
+        {
+            if (!state.IsBusy && late is null)
+            {
+                desktop.Displays.Remove(Fixture.B);
+                late = coordinator.NotifyTopologyChangedAsync();
+            }
+        };
+        await coordinator.NotifyTopologyChangedAsync();
+        Assert.NotNull(late);
+        await late.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Single(desktop.Restored);
+        Assert.False(coordinator.HasWorkPending);
+    }
+
+    [Fact]
+    public async Task PassiveTopologyUpdatesPreserveSummaryAndDetailsAndNeverActivateTheApp()
+    {
+        var (desktop, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        var backend = new Hotkeys();
+        using var model = new MainViewModel(coordinator,
+            new ShortcutController(backend, new ShortcutStore(backend)), new Dispatcher());
+        await model.ExecuteAsync(OperationKind.GatherSelected, Fixture.B);
+        int attention = 0;
+        model.AttentionRequested += () => attention++;
+        model.Details = "Existing problem";
+        string summary = model.Summary;
+        desktop.Displays.Remove(Fixture.A);
+        await model.NotifyTopologyChangedAsync();
+        Assert.Equal(summary, model.Summary);
+        Assert.Equal("Existing problem", model.Details);
+        Assert.True(model.HasRecoveryWarning);
+        desktop.Displays.Clear();
+        await model.NotifyTopologyChangedAsync();
+        Assert.StartsWith("Destination disconnected.", model.Summary);
+        Assert.True(model.HasRecoveryWarning);
+        Assert.True(model.HasDetails);
+        Assert.Equal(0, attention);
+        SavedWindow original = engine.Session!.Windows[0];
+        desktop.Displays.Add(Fixture.A);
+        await model.NotifyTopologyChangedAsync();
+        Assert.Empty(desktop.Restored);
+        Assert.Equal(original, engine.Session.Windows[0]);
+        Assert.True(model.CanRestoreRecovery);
+        Assert.False(model.CanSelect);
+        Assert.False(model.IsBusy);
+        await model.RestoreCommand.ExecuteAsync(null);
+        Assert.False(model.HasRecoveryWarning);
+        Assert.False(model.HasDetails);
+        Assert.True(model.CanSelect);
+        Assert.Equal(0, attention);
+    }
+
+    [Fact]
+    public async Task TopologySubscriberFailureDoesNotLeavePendingWorkOrLockTheGate()
+    {
+        var (_, _, engine) = Fixture.Create();
+        var coordinator = new OperationCoordinator(engine);
+        void Fail(ApplicationState _) => throw new InvalidOperationException("Subscriber failure");
+        coordinator.StateChanged += Fail;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.NotifyTopologyChangedAsync());
+        Assert.False(coordinator.HasWorkPending);
+        coordinator.StateChanged -= Fail;
+        Assert.Empty((await coordinator.NotifyTopologyChangedAsync())!.Problems);
+    }
+
+    [Fact]
     public async Task ConflictingRequestsRejectImmediatelyWithoutQueueing()
     {
         var (desktop, _, engine) = Fixture.Create();
@@ -22,8 +229,11 @@ public sealed class CoordinatorTests
         {
             await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(coordinator.State.IsBusy);
+            Assert.True(coordinator.HasWorkPending);
             var busy = await coordinator.ExecuteAsync(OperationKind.Restore);
             Assert.False(busy.Accepted);
+            Assert.True(busy.Announce);
+            Assert.True(busy.CompletionOrder > 0);
             Assert.Contains("busy", busy.Summary);
             Assert.False((await coordinator.ExecuteAsync(OperationKind.Forget)).Accepted);
             desktop.Pointer = Fixture.A;
@@ -71,7 +281,7 @@ public sealed class CoordinatorTests
         var reply = await coordinator.ExecuteAsync(OperationKind.Restore);
         Assert.Contains("IOException", Assert.Single(reply.Problems));
         Assert.True(reply.Accepted);
-        Assert.Equal("The operation could not finish. Recovery data has not been discarded.", reply.Summary);
+        Assert.Equal("The operation could not finish. Check the details before retrying.", reply.Summary);
         Assert.True(coordinator.State.HasRecovery);
         Assert.False(coordinator.State.IsBusy);
         store.FailWrites = false;

@@ -138,6 +138,11 @@ public sealed class NativeDesktop : IDesktop
     public void Restore(SavedWindow window)
     {
         using var dpi = new DpiScope();
+        if (!MatchesIdentity(window))
+            throw new InvalidOperationException("The original window has closed or changed identity.");
+        Display? origin = GetDisplays().FirstOrDefault(d => d.Id == window.Origin.Id);
+        if (origin is null || origin.Bounds != window.Origin.Bounds || origin.WorkArea != window.Origin.WorkArea)
+            throw new InvalidOperationException("The origin display changed during restoration. Recovery was kept; retry after the layout settles.");
         PrepareDisplay(window, window.Origin, window.Placement.Normal);
         Apply(window, window.Placement);
         WaitFor(window, window.Origin.Id, window.Placement, exactRectangle: true);

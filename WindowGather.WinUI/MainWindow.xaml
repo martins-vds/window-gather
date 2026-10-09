@@ -62,6 +62,9 @@
     <Border Grid.Row="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="0,1,0,0" Padding="0,16,0,0">
     <StackPanel x:Name="Footer" Spacing="12">
+      <InfoBar x:Name="RecoveryWarning" IsOpen="{x:Bind ViewModel.HasRecoveryWarning, Mode=OneWay}" IsClosable="False"
+               Severity="Warning" Message="{x:Bind ViewModel.RecoveryWarning, Mode=OneWay}"
+               AutomationProperties.LiveSetting="Polite" />
       <TextBlock Text="{x:Bind ViewModel.ShortcutReference, Mode=OneWay}" TextWrapping="Wrap"
                  FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       <InfoBar IsOpen="{x:Bind ViewModel.HasShortcutWarning, Mode=OneWay}" IsClosable="False"

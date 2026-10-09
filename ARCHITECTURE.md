@@ -38,8 +38,8 @@ this is not a claim that every possible external reflection consumer was tested.
 - Gather saves recovery before moving anything, excludes destination-resident
   windows and blocks a second Gather while recovery exists. Identity uses
   handle, process ID/start time, class and per-session native markers, not titles.
-- Restore checks original physical monitors/layout and retains failed entries
-  for retry. Resolved completion or remaining recovery is persisted before
+- Restore checks original physical monitor identity, adapts changed layouts and
+  retains failed entries for retry. Resolved completion or remaining recovery is persisted before
   unmarking. Storage failures are reported rather than treated as success.
 - The proven native `WINDOWPLACEMENT`, workspace/physical-coordinate, DPI,
   minimized/maximized, no-activation and delayed-verification behavior remains
@@ -67,12 +67,12 @@ seconds. Local verification simulated taskbar recreation; it did not kill
 Explorer. The legacy Ctrl+Alt+F12 default is preserved, with its documented
 Windows debugger reservation shown in settings.
 
-## Agreed monitor-disconnect policy (pending implementation)
+## Monitor-disconnect behavior
 
 The user selected automatic return of available borrowed windows when the
-gathering destination disconnects. This is the next behavior contract, not a
-description of the current implementation: currently Restore is explicit and
-requires the original physical bounds/work area.
+gathering destination disconnects. The WinUI frontend implements this policy;
+the retained legacy frontend is a regression reference, not a hotplug observer.
+Both frontends share the updated explicit Restore placement rules.
 
 | Situation during an active session | Required behavior |
 | --- | --- |
@@ -94,6 +94,24 @@ topology change arrives during another operation, retain a pending topology
 recheck and evaluate after that operation finishes; do not interrupt it or lose
 the notification to a busy rejection.
 
+The hidden native receiver debounces `WM_DISPLAYCHANGE` and work-area
+`WM_SETTINGCHANGE` broadcasts for 500 ms. Inside the operation gate, two matching
+physical-ID/bounds/work-area snapshots 250 ms apart establish stability; up to
+five comparisons tolerate intermediate layouts. Failed, invalid or ambiguous
+enumeration never counts as removal. Each return revalidates its origin, and the
+native adapter checks identity and layout again immediately before placement.
+
+An optional schema-1 `AutomaticReturnAttempted` field is omitted when false,
+so old recovery files round-trip unchanged. Before automatic movement, the
+decision is atomically saved with every original return point. Partial completion
+preserves this flag, and reconnects never automatically retry that session.
+Even if saving the decision fails, an in-memory latch prevents reconnect-driven
+retries; explicit Restore remains available. At startup, a session whose
+destination is already absent is treated as pending recovery and requires
+explicit Restore, rather than retroactively moving windows. A connected
+startup destination can still trigger automatic return on a subsequent
+disconnect. No return points are rewritten with adapted or OS-relocated geometry.
+
 Successful returns are resolved durably; missing, unsafe or failed returns stay
 retryable. Do not infer monitor removal from enumeration failure. While recovery
 remains, block a new Gather until Restore completes or the user explicitly
@@ -105,6 +123,12 @@ of both destination and origins, partial return, changed origin layout,
 reconnection without automatic movement, mid-operation topology changes,
 enumeration/storage/native failures and restart with pending recovery. All
 automatic paths must exclude resident/unrelated windows.
+
+The current source adds this behavior after the immutable 2.0.1 release;
+previously generated release binaries are unchanged. Automated verification
+uses simulated topology, an isolated real-XAML composition, native broadcast
+messages and owned disposable windows. Actual cable-disconnect and cross-monitor
+movement checks require a multi-monitor desktop.
 
 ## Toolchain and quality gates
 
@@ -143,6 +167,27 @@ it before enabling an 80% break threshold (high 90%, low 80%).
 Compilation-error and default Stryker block-filter exclusions are not counted
 as kills. Five Application mutants still survive; there are no blanket custom
 logical/equality exclusions or mutation-dashboard uploads.
+
+After the monitor-disconnect implementation, the portable suite passed 108
+tests. Domain/Application line coverage remains 100%, with branch coverage
+96.96%/95.96%. Across 68 reported core methods, maximum CRAP is 24
+(`GatherEngine.Restore`). The changed Application project measured 94.06%
+mutation: 205 killed, one timeout and 13 surviving eligible mutants; the existing
+80% break threshold is unchanged. Domain source is unchanged, so its historical
+mutation result above was not rerun for this feature.
+
+The combined legacy/native/UI harness passed 33 checks on the current
+single-monitor desktop, including fresh-layout/identity rejection and exact
+normal/minimized/maximized restoration on owned windows. Cross-monitor native
+round trips were explicitly skipped. The final isolated WinUI XAML harness
+passed disconnect/pending-warning/reconnect behavior, simultaneous pinned
+warnings, responsive layout and the existing parity cases. No real cables,
+display settings or user windows/recovery/settings were changed.
+
+Feature verification artifacts are
+`artifacts\coverage-616b2647996546549763f1cb4179a577\report`,
+`artifacts\mutation-disconnect-complete\reports` and
+`artifacts\disconnect-ui-final\ui-parity-results.txt`.
 
 Line coverage, branch coverage, mutation and CRAP are separate measures.
 The tested method gate reads ReportGenerator's per-class XML generated from

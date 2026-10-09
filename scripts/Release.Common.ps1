@@ -137,7 +137,8 @@ function Assert-ReleaseArchive([string]$Archive, $Version, [string]$Commit, [str
         }
         if ($manifest.executableSha256 -cne $hashes['WindowGather.WinUI.exe'] -or
             $manifest.sourceArchiveSha256 -cne $hashes['source.zip']) { throw 'Archive bytes differ from the manifest.' }
-        $proof = Join-Path (Split-Path $PSScriptRoot -Parent) ('artifacts\source-proof-' + [guid]::NewGuid().ToString('N') + '.zip')
+        $proofDirectory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Archive))
+        $proof = Join-Path $proofDirectory ('source-proof-' + [guid]::NewGuid().ToString('N') + '.zip')
         try {
             Invoke-ReleaseGit -C (Split-Path $PSScriptRoot -Parent) archive --format=zip "--output=$proof" $Commit
             if ((Get-ReleaseHash $proof) -cne $hashes['source.zip']) { throw 'Source archive differs from the committed tree.' }

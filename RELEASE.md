@@ -1,9 +1,11 @@
-# Window Gather 2.0.0 portable release
+# Window Gather 2.0.1 portable release
 
 The release uses the verified x64, self-contained WinUI single-file configuration.
 It is one distributable EXE with runtime extraction, not an extraction-free app.
 The old 1.2 frontend/history is retained. Recovery schema 1, storage paths,
 numeric shortcut settings and the shared mutex are unchanged.
+Version 2.0.1 includes the polished native Windows interface. Existing 2.0.0
+release outputs are retained in their separate versioned directory.
 
 From a clean, committed checkout on Windows with the pinned SDK:
 
@@ -17,16 +19,16 @@ SHA-256 checksums. It refuses to overwrite an existing versioned release directo
 No GitHub Release is created or uploaded by this script.
 
 The persistent output directory is
-`artifacts\releases\WindowGather-2.0.0-win-x64`:
+`artifacts\releases\WindowGather-2.0.1-win-x64`:
 
 | Path | Content |
 | --- | --- |
-| `portable\WindowGather.WinUI.exe` | Version 2.0.0, x64 self-contained application |
+| `portable\WindowGather.WinUI.exe` | Version 2.0.1, x64 self-contained application |
 | `portable\README.md` | Usage, shortcuts, recovery and limitations |
 | `portable\source` | Exact committed repository source, excluding build outputs |
 | `portable\RELEASE.json` | Version, source commit, RID and EXE checksum |
 | `portable\SHA256SUMS.txt` | EXE SHA-256 |
-| `WindowGather-2.0.0-win-x64-portable.zip` | Complete portable folder contents |
+| `WindowGather-2.0.1-win-x64-portable.zip` | Complete portable folder contents |
 | `SHA256SUMS.txt` | ZIP and EXE SHA-256 |
 
 Extract the ZIP, then open `WindowGather.WinUI.exe`. Exit an older frontend first.

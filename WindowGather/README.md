@@ -1,4 +1,4 @@
-# Window Gather 2.0.0
+# Window Gather 2.0.1
 
 A free, local Windows utility that temporarily brings application windows onto
 one display, then restores only those borrowed windows. Windows already on the
@@ -6,7 +6,7 @@ destination are excluded from both operations.
 
 ## Run
 
-Open `WindowGather.WinUI.exe` from the 2.0.0 portable package, or `WindowGather.exe`
+Open `WindowGather.WinUI.exe` from the 2.0.1 portable package, or `WindowGather.exe`
 from the retained 1.2 WinForms release. Self-contained distributions include .NET
 and the new frontend also includes Windows App SDK: no installation,
 subscription, AutoHotkey, or separate runtime is required. It is an unsigned
@@ -15,7 +15,7 @@ source if your security policy requires it.
 
 When upgrading, exit the old version through its notification-area menu before
 opening the new executable. Existing recovery data is kept and remains compatible.
-The 2.0.0 EXE is a single distributable file that extracts its bundled runtime
+The 2.0.1 EXE is a single distributable file that extracts its bundled runtime
 contents on startup. Keep the accompanying `source` folder to inspect or rebuild
 the exact release; it is not required to run the utility.
 

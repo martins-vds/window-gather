@@ -11,7 +11,7 @@
       "windowgather.application": {
         "type": "Project",
         "dependencies": {
-          "WindowGather.Domain": "[2.0.0, )"
+          "WindowGather.Domain": "[2.0.1, )"
         }
       },
       "windowgather.domain": {

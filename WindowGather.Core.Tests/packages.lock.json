@@ -107,7 +107,7 @@
       "windowgather.application": {
         "type": "Project",
         "dependencies": {
-          "WindowGather.Domain": "[2.0.0, )"
+          "WindowGather.Domain": "[2.0.1, )"
         }
       },
       "windowgather.domain": {
@@ -117,7 +117,7 @@
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "WindowGather.Application": "[2.0.0, )"
+          "WindowGather.Application": "[2.0.1, )"
         }
       },
       "windowgather.quality": {

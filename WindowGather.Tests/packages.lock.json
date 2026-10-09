@@ -5,13 +5,13 @@
       "windowgather": {
         "type": "Project",
         "dependencies": {
-          "WindowGather.Infrastructure.Windows": "[2.0.0, )"
+          "WindowGather.Infrastructure.Windows": "[2.0.1, )"
         }
       },
       "windowgather.application": {
         "type": "Project",
         "dependencies": {
-          "WindowGather.Domain": "[2.0.0, )"
+          "WindowGather.Domain": "[2.0.1, )"
         }
       },
       "windowgather.domain": {
@@ -20,7 +20,7 @@
       "windowgather.infrastructure.windows": {
         "type": "Project",
         "dependencies": {
-          "WindowGather.Application": "[2.0.0, )"
+          "WindowGather.Application": "[2.0.1, )"
         }
       }
     }

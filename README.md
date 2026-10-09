@@ -1,4 +1,4 @@
-# Window Gather 2.0.0
+# Window Gather 2.0.1
 
 A portable Windows utility that temporarily gathers application windows onto any
 monitor and restores only the borrowed windows to their original monitors and
@@ -19,6 +19,8 @@ The application is unsigned. Source code is included so you can inspect and buil
 
 The 2.0.0 release replaces the presentation with WinUI 3/MVVM while retaining
 the existing recovery and shortcut formats. The legacy frontend stays at 1.2.0.
+Version 2.0.1 adds the polished native layout, system-aware styling and responsive
+monitor/action presentation without changing recovery or window movement.
 
 ## Build
 
@@ -47,7 +49,7 @@ at runtime; it is **one distributable file**, not an extraction-free application
 `-Runtime win-arm64` selects the native ARM64 distribution.
 
 `Release.ps1` requires a clean committed checkout and creates
-`artifacts\releases\WindowGather-2.0.0-win-x64`. It contains the portable EXE,
+`artifacts\releases\WindowGather-2.0.1-win-x64`. It contains the portable EXE,
 usage documentation, the exact committed source, a named distributable ZIP,
 release metadata and SHA-256 checksums. See [release packaging](RELEASE.md).
 

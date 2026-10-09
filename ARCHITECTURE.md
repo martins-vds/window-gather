@@ -252,3 +252,19 @@ the ARM64 host without an installed x64 .NET host. No clean VM or entirely
 runtime-free Windows installation was available, so clean-machine validation,
 older supported Windows versions and an actual Explorer restart remain
 unverified. These local artifacts are not a new signed release.
+
+## Tag-driven release engineering
+
+The separate [release pipeline](RELEASE.md) gates Windows x64 and ARM64
+single-executable archives on the existing portable quality/mutation checks.
+An exact stable tag drives managed, native-manifest and app-title versions;
+source identity is recorded separately. Tag/RID-specific ignored lock graphs
+leave normal development restores unchanged.
+
+From a clean committed checkout, use `scripts\Release.ps1 -Tag vX.Y.Z
+-Runtime win-x64` (or `win-arm64`) for release candidates rather than the
+development publishing commands above. The six-entry archive contains the
+EXE, usage, VERSION, manifest, checksums and the exact committed `source.zip`.
+Default signing is disabled; protected OIDC signing must be explicitly
+configured. Required signing failures block publication, and existing GitHub
+assets are never clobbered. Local packaging does not create a tag or release.

@@ -1,43 +1,159 @@
-# Window Gather 2.0.1 portable release
+# Tag-driven Window Gather releases
 
-The release uses the verified x64, self-contained WinUI single-file configuration.
-It is one distributable EXE with runtime extraction, not an extraction-free app.
-The old 1.2 frontend/history is retained. Recovery schema 1, storage paths,
-numeric shortcut settings and the shared mutex are unchanged.
-Version 2.0.1 includes the polished native Windows interface. Existing 2.0.0
-release outputs are retained in their separate versioned directory.
+The strategy adapts the [desktop-computer-use release pipeline at
+3a660fec](https://github.com/martins-vds/desktop-computer-use-mcp-server/blob/3a660fec2b8e0a32296ba4203c61c3b6f8564dd1/.github/workflows/release.yml)
+to the existing WinUI utility. It publishes Windows x64 and ARM64 only. Old
+1.2, 2.0.0 and 2.0.1 artifacts are retained; neither desktop behavior nor
+recovery/settings formats are changed by release engineering.
 
-From a clean, committed checkout on Windows with the pinned SDK:
+## One version source
+
+Release tags must be canonical stable `vMAJOR.MINOR.PATCH`, for example `v2.1.0`.
+Missing `v`, prereleases, truncated versions, leading zeros and components
+outside 0..65534 are rejected (65535 is reserved by CLR assembly versioning).
+The current development default remains 2.0.1; a release tag overrides it.
+
+| Metadata for `v2.1.0` | Value |
+| --- | --- |
+| Version / PackageVersion / InformationalVersion | `2.1.0` |
+| AssemblyVersion / FileVersion / embedded WinUI native manifest | `2.1.0.0` |
+| Window title | `Window Gather 2.1.0`, derived from the actual CLR assembly |
+| RepositoryCommit / release manifest commit | Full tagged source commit, separate from product version |
+
+Release publishing explicitly passes all version properties,
+`IncludeSourceRevisionInInformationalVersion=false` and
+`ContinuousIntegrationBuild=true`. The native manifest is copied and versioned
+under ignored `obj`, preserving DPI, compatibility and long-path declarations.
+The source manifest and legacy frontend version are not rewritten.
+Managed assembly, native PE product/file versions, architecture, embedded
+manifest and assembly source metadata are inspected without executing the app.
+
+The pinned C# 14, SDK, packages and ordinary lock files stay in effect.
+RID/tag-specific restore graphs use `obj\packages.release-<RID>-<tag>.lock.json`;
+they never overwrite ordinary checked-in locks.
+
+## GitHub workflow
+
+After this pipeline is reviewed and present on the intended source commit:
 
 ```powershell
-.\scripts\Release.ps1
+git tag v2.1.0
+git push origin v2.1.0
+# Or rerun an EXISTING tag explicitly:
+gh workflow run release.yml -f tag=v2.1.0 -f artifact_signing=disabled
 ```
 
-The script checks executable/manifest version consistency, publishes the EXE,
-archives the exact Git commit's source, packages usage documentation and writes
-SHA-256 checksums. It refuses to overwrite an existing versioned release directory.
-No GitHub Release is created or uploaded by this script.
+No tag, remote push or actual GitHub Release is created by local packaging.
+The workflow triggers on pushed `v*` tags and supports manual dispatch with
+required `tag` and `artifact_signing` (`auto`, `enabled`, `disabled`) inputs.
+Manual dispatch resolves the requested tag and checks out its exact commit
+in every test/build/package/release job, not the dispatch branch's source.
+Tags from before this pipeline exists cannot use its packaging scripts.
 
-The persistent output directory is
-`artifacts\releases\WindowGather-2.0.1-win-x64`:
+The workflow gates both RIDs on portable tests, dependency checks, coverage,
+method CRAP, release contracts, frontend builds and both core mutation gates.
+Hosted runners never execute native desktop or GUI operation tests.
+Those remain separate local interactive suites touching owned windows only.
 
-| Path | Content |
+Unsigned packaging has read-only repository permissions and no OIDC privilege
+or Azure login. Required signing runs in a separate protected `artifact-signing`
+job with `id-token: write`; only final publication receives `contents: write`.
+Azure actions are pinned to the reference's immutable SHAs.
+
+The final job verifies both archives and their exact committed source, writes
+`SHA256SUMS.txt`, checks that the remote tag still identifies the artifact source,
+and creates `Window Gather vX.Y.Z` with generated notes. Authentication/API errors
+fail rather than being treated as an absent release.
+Existing assets are **immutable**: an identical rerun does nothing, and any
+changed/missing/additional asset fails without `--clobber`. A partial publication
+requires deliberate maintainer recovery; it is never silently repaired or
+replaced. Changing signing policy or producing different signed bytes requires
+a new version/tag. ZIP entry timestamps are taken from the source commit,
+although byte reproducibility across changed tools/runners is not promised.
+
+## Local, unsigned packages
+
+From a clean committed checkout, with the pinned SDK on Windows:
+
+```powershell
+.\scripts\Release.ps1 -Tag v2.1.0 -Runtime win-x64
+.\scripts\Release.ps1 -Tag v2.1.0 -Runtime win-arm64
+```
+
+A local candidate tag need not exist; the script does not create one.
+If it exists, it must identify HEAD. `-ExpectedCommit <SHA>` additionally pins
+the checkout. Existing output directories are rejected instead of overwritten.
+`-Stage Build`, `ValidateBuild` and `Package` split building from signing for CI;
+normal local `All` builds and packages unsigned. `-SigningRequired` fails unless
+a valid timestamped signature has been applied between Build and Package.
+SHA-256 digest/RFC3161 timestamp verification uses SignTool plus Authenticode;
+there is no unsigned fallback when signing is required.
+
+Outputs under `artifacts\releases\v2.1.0\<RID>` include the staged portable folder,
+build identity, checksums and respectively:
+
+- `window-gather-windows-x64-v2.1.0.zip`
+- `window-gather-windows-arm64-v2.1.0.zip`
+
+Each archive contains `WindowGather.WinUI.exe`, usage `README.md`, `VERSION`,
+`release-manifest.json`, internal `SHA256SUMS.txt` and `source.zip`.
+The source ZIP is the exact Git archive of the recorded commit, including the
+commit comment; verification compares its hash to a fresh archive of that tree.
+The manifest records tag/version/assemblyVersion, component `Window Gather`,
+RID, commit, Authenticode state/provider and hashes of the **final** EXE/source.
+Outer checksums describe final distributable archives, after any signing.
+
+These are unpackaged, self-contained WinUI single executables **with runtime
+extraction**, not extraction-free apps. Publishing preserves
+`WindowsPackageType=None`, `WindowsAppSDKSelfContained=true`,
+`SelfContained=true`, `EnableMsixTooling=true`, `PublishSingleFile=true`,
+`IncludeAllContentForSelfExtract=true` and native-library extraction.
+
+Choose x64 for AMD64 Windows or ARM64 for native ARM64 Windows
+(`$env:PROCESSOR_ARCHITECTURE`). Extract the archive and run the EXE directly:
+
+```powershell
+Get-FileHash .\window-gather-windows-x64-v2.1.0.zip -Algorithm SHA256
+# Compare with the release SHA256SUMS.txt before extracting.
+.\WindowGather.WinUI.exe
+```
+
+Do not prefix it with `dotnet`. No separate .NET/Windows App SDK installation
+is required. Exit an older frontend through its tray before running a new one.
+Do not bypass OS/security warnings on someone else's behalf.
+
+## Optional signing readiness (manual external setup)
+
+Default `auto` releases are unsigned while repository variable
+`AZURE_ARTIFACT_SIGNING_ENABLED` is unset or exactly `false`. Exactly `true`
+requires signing; other values fail validation. Explicit `enabled` requires
+signing even if the default is false; `disabled` never logs into Azure.
+
+Before enabling signing, maintainers must arrange Azure identity verification,
+an Artifact Signing account/certificate profile and a federated OIDC identity
+authorized to sign that profile. Create/protect the GitHub `artifact-signing`
+environment with appropriate reviewers/tag restrictions and configure:
+
+| Scope | Names |
 | --- | --- |
-| `portable\WindowGather.WinUI.exe` | Version 2.0.1, x64 self-contained application |
-| `portable\README.md` | Usage, shortcuts, recovery and limitations |
-| `portable\source` | Exact committed repository source, excluding build outputs |
-| `portable\RELEASE.json` | Version, source commit, RID and EXE checksum |
-| `portable\SHA256SUMS.txt` | EXE SHA-256 |
-| `WindowGather-2.0.1-win-x64-portable.zip` | Complete portable folder contents |
-| `SHA256SUMS.txt` | ZIP and EXE SHA-256 |
+| Repository variable | `AZURE_ARTIFACT_SIGNING_ENABLED` |
+| Protected environment secrets | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` |
+| Environment/repository variables | `AZURE_ARTIFACT_SIGNING_ENDPOINT`, `AZURE_ARTIFACT_SIGNING_ACCOUNT`, `AZURE_ARTIFACT_SIGNING_PROFILE` |
 
-Extract the ZIP, then open `WindowGather.WinUI.exe`. Exit an older frontend first.
-The application is unsigned. Do not bypass a Windows security warning on behalf
-of someone else; follow your organization's policy for inspected unsigned tools.
+OIDC federation must match this repository's protected environment, not a copied
+identity from the reference repository. Enable GitHub Actions and allow the
+workflow's scoped release write permission; any ruleset restricting tag/release
+creation must allow the chosen maintainer/workflow. This implementation creates
+no roles, secrets, Azure resources, signing accounts or paid infrastructure.
+Signed mode remains structurally validated only until these external resources
+are configured and a real signing run is explicitly authorized.
 
-For safe local startup verification, inspect the versioned title and existing
-recovery/shortcut UI, then use Exit without gathering, restoring, forgetting or
-saving settings. Local startup is not evidence of clean-machine support: no
-clean VM/runtime-free Windows installation was available during migration
-verification. Native ARM64 publishing and the other quality measurements are
-documented separately in `ARCHITECTURE.md`.
+## Verification
+
+`scripts\Test-Release.ps1` runs in the ordinary verification pipeline and uses
+mocked network/GitHub commands for publication contracts. It covers strict
+version bounds/overflow, signing policies, archive identity/hashes, repeatable
+entry timestamps, auth failures and immutable reruns. Local packaging must also
+exercise a tag override different from the development version and both RIDs.
+Real signing, hosted Actions execution and clean-machine startup are distinct
+checks; local metadata/package validation does not establish those claims.

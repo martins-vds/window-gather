@@ -15,7 +15,8 @@ placements. Windows already on the destination stay untouched.
 - Run locally without installation, telemetry, subscriptions, or display-setting changes.
 
 Read the [usage guide, recovery behavior, and limitations](WindowGather/README.md).
-The application is unsigned. Source code is included so you can inspect and build it.
+Releases are unsigned by default; optional Azure Artifact Signing must be
+configured and verified before enabling it. Source code accompanies each package.
 
 The 2.0.0 release replaces the presentation with WinUI 3/MVVM while retaining
 the existing recovery and shortcut formats. The legacy frontend stays at 1.2.0.
@@ -37,7 +38,8 @@ Domain and Application target portable `net10.0` and have no third-party package
 .\scripts\Verify.ps1 -Native -LegacyUi -Mutation
 .\scripts\Publish.ps1 -Format Folder
 .\scripts\Publish.ps1 -Format SingleFile
-.\scripts\Release.ps1
+.\scripts\Release.ps1 -Tag v2.1.0 -Runtime win-x64
+.\scripts\Release.ps1 -Tag v2.1.0 -Runtime win-arm64
 ```
 
 The native tests move only their own disposable test windows, never your
@@ -51,10 +53,14 @@ configuration extracts its self-contained .NET and Windows App SDK contents
 at runtime; it is **one distributable file**, not an extraction-free application.
 `-Runtime win-arm64` selects the native ARM64 distribution.
 
-`Release.ps1` requires a clean committed checkout and creates
-`artifacts\releases\WindowGather-2.0.1-win-x64`. It contains the portable EXE,
-usage documentation, the exact committed source, a named distributable ZIP,
-release metadata and SHA-256 checksums. See [release packaging](RELEASE.md).
+`Release.ps1` requires a clean committed checkout and writes immutable candidate
+packages under `artifacts\releases\<tag>\<RID>`, including the portable EXE,
+usage documentation, exact committed `source.zip`, `VERSION`, release metadata
+and SHA-256 checksums. The release tag controls CLR/native/app-facing versions.
+GitHub Actions supports tag/manual releases with scoped optional signing and
+no automatic replacement of existing assets. See [release packaging and required
+GitHub/signing settings](RELEASE.md). Local packaging never publishes a GitHub
+Release or creates a tag. Existing 2.0.0/2.0.1 artifacts are preserved.
 
 The original WinForms project and existing 1.2 release are retained as a
 regression reference. Exit either frontend before launching the other: both

@@ -6,18 +6,19 @@ destination are excluded from both operations.
 
 ## Run
 
-Open `WindowGather.WinUI.exe` from the 2.0.1 portable package, or `WindowGather.exe`
+Open `WindowGather.WinUI.exe` from a current portable package, or `WindowGather.exe`
 from the retained 1.2 WinForms release. Self-contained distributions include .NET
 and the new frontend also includes Windows App SDK: no installation,
-subscription, AutoHotkey, or separate runtime is required. It is an unsigned
-application, not a Microsoft- or commercially-signed product. Review the included
-source if your security policy requires it.
+subscription, AutoHotkey, or separate runtime is required. Releases are unsigned
+by default; `release-manifest.json` declares whether Azure Artifact Signing was
+required and verified. Review the included source and follow your security policy.
 
 When upgrading, exit the old version through its notification-area menu before
 opening the new executable. Existing recovery data is kept and remains compatible.
-The 2.0.1 EXE is a single distributable file that extracts its bundled runtime
-contents on startup. Keep the accompanying `source` folder to inspect or rebuild
-the exact release; it is not required to run the utility.
+The EXE is a single distributable file that extracts its bundled runtime
+contents on startup. Keep the accompanying `source.zip` (or the `source` folder
+in older releases) to inspect or rebuild the exact release; it is not required
+to run the utility. Run the EXE directly, not with `dotnet`.
 
 1. Click **Identify displays** to show a large matching label on each monitor
    for three seconds, without moving your windows or taking keyboard focus.

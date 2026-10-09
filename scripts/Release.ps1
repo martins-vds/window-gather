@@ -1,58 +1,80 @@
+param(
+    [Parameter(Mandatory)][string]$Tag,
+    [ValidateSet('win-x64', 'win-arm64')][string]$Runtime = 'win-x64',
+    [ValidateSet('All', 'Build', 'ValidateBuild', 'Package')][string]$Stage = 'All',
+    [string]$ExpectedCommit = '',
+    [string]$OutputRoot = 'artifacts\releases',
+    [switch]$SigningRequired
+)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Release.Common.ps1')
 $original = Get-Location
 try {
     Set-Location (Split-Path $PSScriptRoot -Parent)
-    $status = & git status --porcelain
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the Git checkout.' }
-    if ($status) { throw 'Release packaging requires a clean committed checkout.' }
-    $commit = & git rev-parse HEAD
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve the release source commit.' }
-    $version = ([xml](Get-Content -LiteralPath .\Directory.Build.props -Raw)).Project.PropertyGroup.Version
-    if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release version: $version" }
-    $manifest = [xml](Get-Content -LiteralPath .\WindowGather.WinUI\app.manifest -Raw)
-    if ($manifest.assembly.assemblyIdentity.version -ne "$version.0") {
-        throw 'Native manifest version differs from the release version.'
+    $version = Get-ReleaseVersion $Tag
+    $commit = Invoke-ReleaseGit rev-parse HEAD
+    if ($ExpectedCommit -and $commit -cne $ExpectedCommit) { throw 'Checkout differs from the requested release source.' }
+    if (Invoke-ReleaseGit status --porcelain --untracked-files=normal) { throw 'Release packaging requires a clean committed checkout.' }
+    $tags = @(Invoke-ReleaseGit tag --list $Tag)
+    if ($tags.Count -gt 0 -and (Invoke-ReleaseGit rev-parse "$Tag^{commit}") -cne $commit) {
+        throw 'Existing release tag points to different source.'
     }
-    $name = "WindowGather-$version-win-x64"
-    $release = Join-Path 'artifacts\releases' $name
-    if (Test-Path -LiteralPath $release) { throw "Release directory already exists: $release" }
-    & .\scripts\Publish.ps1 -Format SingleFile -Runtime win-x64
-    $published = Get-Item -LiteralPath .\artifacts\publish-win-x64-singlefile\WindowGather.WinUI.exe
-    if ($published.VersionInfo.FileVersion -ne "$version.0" -or
-        $published.VersionInfo.ProductVersion.Split('+')[0] -ne $version) {
-        throw 'Published executable version differs from the release version.'
+    $root = [IO.Path]::GetFullPath((Join-Path $OutputRoot "$Tag\$Runtime"))
+    $publish = Join-Path $root 'publish'
+    $executable = Join-Path $publish 'WindowGather.WinUI.exe'
+    $buildFile = Join-Path $root 'build-manifest.json'
+    if ($Stage -in @('All', 'Build')) {
+        if (Test-Path -LiteralPath $root) { throw "Build output already exists: $root" }
+        & .\scripts\Publish.ps1 -Format SingleFile -Runtime $Runtime -Tag $Tag -Commit $commit -OutputDirectory $publish
+        $assembly = [IO.Path]::GetFullPath("WindowGather.WinUI\bin\Release\net10.0-windows10.0.19041.0\$Runtime\WindowGather.WinUI.dll")
+        Assert-ReleaseMetadata $assembly $executable $version $commit $Runtime
+        Assert-ReleaseSignature $executable $false
+        [ordered]@{
+            tag = $Tag; version = $version.Version; assemblyVersion = $version.AssemblyVersion
+            runtimeIdentifier = $Runtime; commit = $commit; unsignedSha256 = Get-ReleaseHash $executable
+        } | ConvertTo-Json | Set-Content -LiteralPath $buildFile -Encoding utf8
+        if ($Stage -eq 'Build') { Write-Output "Verified build: $root"; return }
     }
-    $package = Join-Path $release 'portable'
+    $build = Get-Content -LiteralPath $buildFile -Raw | ConvertFrom-Json
+    if ($build.tag -cne $Tag -or $build.version -cne $version.Version -or
+        $build.assemblyVersion -cne $version.AssemblyVersion -or $build.commit -cne $commit -or
+        $build.runtimeIdentifier -cne $Runtime) { throw 'Build payload identity mismatch.' }
+    Assert-ReleaseExecutable $executable $version $Runtime
+    if ($Stage -eq 'ValidateBuild' -or -not $SigningRequired) {
+        if ((Get-ReleaseHash $executable) -cne $build.unsignedSha256) { throw 'Build payload bytes changed before signing/packaging.' }
+    }
+    if ($Stage -eq 'ValidateBuild') { Assert-ReleaseSignature $executable $false; return }
+    Assert-ReleaseSignature $executable ([bool]$SigningRequired)
+    $package = Join-Path $root 'portable'
+    if (Test-Path -LiteralPath $package) { throw "Package already exists: $package" }
     New-Item -ItemType Directory -Path $package | Out-Null
-    $executable = Join-Path $package 'WindowGather.WinUI.exe'
-    Copy-Item -LiteralPath $published.FullName -Destination $executable
-    Copy-Item -LiteralPath .\WindowGather\README.md -Destination (Join-Path $package 'README.md')
-    $sourceArchive = Join-Path $release 'source.zip'
-    try {
-        & git archive --format=zip "--output=$sourceArchive" $commit
-        if ($LASTEXITCODE -ne 0) { throw 'Cannot archive the committed release source.' }
-        Expand-Archive -LiteralPath $sourceArchive -DestinationPath (Join-Path $package 'source')
-    }
-    finally {
-        if (Test-Path -LiteralPath $sourceArchive) { Remove-Item -LiteralPath $sourceArchive }
-    }
-    $exeHash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
+    Copy-Item -LiteralPath $executable -Destination $package
+    $usage = Get-Content -LiteralPath .\WindowGather\README.md -Raw
+    $usage = [regex]::Replace($usage, '\A# [^\r\n]+', "# Window Gather $Tag ($Runtime)")
+    $usage | Set-Content -LiteralPath (Join-Path $package 'README.md') -Encoding utf8
+    $version.Version | Set-Content -LiteralPath (Join-Path $package 'VERSION') -Encoding ascii
+    $sourceArchive = Join-Path $package 'source.zip'
+    Invoke-ReleaseGit archive --format=zip "--output=$sourceArchive" $commit
+    $exeHash = Get-ReleaseHash (Join-Path $package 'WindowGather.WinUI.exe')
+    $sourceHash = Get-ReleaseHash $sourceArchive
     [ordered]@{
-        Version = $version
-        SourceCommit = $commit
-        RuntimeIdentifier = 'win-x64'
-        Distribution = 'Self-contained single executable with runtime extraction'
-        Executable = 'WindowGather.WinUI.exe'
-        ExecutableSha256 = $exeHash
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'RELEASE.json') -Encoding utf8
-    "$exeHash  WindowGather.WinUI.exe" |
+        tag = $Tag; version = $version.Version; assemblyVersion = $version.AssemblyVersion
+        component = 'Window Gather'; runtimeIdentifier = $Runtime; commit = $commit
+        authenticodeSigned = [bool]$SigningRequired
+        signingProvider = $(if ($SigningRequired) { 'Azure Artifact Signing' } else { 'none' })
+        executableSha256 = $exeHash; sourceArchiveSha256 = $sourceHash
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'release-manifest.json') -Encoding utf8
+    "$exeHash  WindowGather.WinUI.exe`n$sourceHash  source.zip" |
         Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Encoding ascii
-    $zip = Join-Path $release "$name-portable.zip"
-    Compress-Archive -Path (Join-Path $package '*') -DestinationPath $zip -CompressionLevel Optimal
-    $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-    @("$zipHash  $name-portable.zip", "$exeHash  portable\WindowGather.WinUI.exe") |
-        Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS.txt') -Encoding ascii
-    Write-Output "Release: $((Get-Item -LiteralPath $release).FullName)"
+    $architecture = $Runtime.Substring(4)
+    $zip = Join-Path $root "window-gather-windows-$architecture-$Tag.zip"
+    $timestamp = [DateTimeOffset]::Parse((Invoke-ReleaseGit show -s --format=%cI $commit))
+    New-ReleaseZip $package $zip $timestamp
+    $null = Assert-ReleaseArchive $zip $version $commit $Runtime
+    $zipHash = Get-ReleaseHash $zip
+    "$zipHash  $([IO.Path]::GetFileName($zip))" |
+        Set-Content -LiteralPath (Join-Path $root 'SHA256SUMS.txt') -Encoding ascii
+    Write-Output "Package: $zip"
     Write-Output "Source: $commit"
     Write-Output "EXE SHA256: $exeHash"
     Write-Output "ZIP SHA256: $zipHash"

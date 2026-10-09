@@ -14,6 +14,7 @@ $original = Get-Location
 try {
     Set-Location (Split-Path $PSScriptRoot -Parent)
     & .\scripts\VerifyDependencies.ps1
+    & .\scripts\Test-Release.ps1
     Invoke-Dotnet tool restore
     Invoke-Dotnet restore .\WindowGather.slnx --locked-mode --nologo
     $run = Join-Path 'artifacts' ('coverage-' + [guid]::NewGuid().ToString('N'))

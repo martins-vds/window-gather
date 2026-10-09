@@ -15,6 +15,7 @@
     <DefineConstants Condition="'$(UiTestBuild)' == 'true'">$(DefineConstants);UI_PARITY_TEST</DefineConstants>
     <DefineConstants Condition="'$(UiTestBuild)' == 'true' and '$(UiPreviewBuild)' == 'true'">$(DefineConstants);UI_PREVIEW</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationManifest Condition="'$(ReleaseTag)' != ''">$(BaseIntermediateOutputPath)release-$(RuntimeIdentifier)-$(AssemblyVersion).manifest</ApplicationManifest>
     <AssemblyName>WindowGather.WinUI</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
@@ -22,4 +23,21 @@
     <ProjectReference Include="..\WindowGather.Infrastructure.Windows\WindowGather.Infrastructure.Windows.csproj" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
   </ItemGroup>
+  <ItemGroup Condition="'$(ReleaseTag)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>RepositoryCommit</_Parameter1>
+      <_Parameter2>$(RepositoryCommit)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ReleaseTag</_Parameter1>
+      <_Parameter2>$(ReleaseTag)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Target Name="GenerateReleaseApplicationManifest" BeforeTargets="PrepareForBuild" Condition="'$(ReleaseTag)' != ''">
+    <Error Condition="'$(ReleaseTag)' != 'v$(Version)' or '$(AssemblyVersion)' != '$(Version).0' or '$(FileVersion)' != '$(Version).0' or '$(InformationalVersion)' != '$(Version)' or '$(PackageVersion)' != '$(Version)' or '$(RepositoryCommit)' == '' or '$(IncludeSourceRevisionInInformationalVersion)' != 'false' or '$(ContinuousIntegrationBuild)' != 'true'"
+           Text="Release tag, version properties and source commit must agree." />
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\app.manifest" DestinationFiles="$(ApplicationManifest)" />
+    <XmlPoke XmlInputPath="$(ApplicationManifest)" Query="/*[local-name()='assembly']/*[local-name()='assemblyIdentity']/@version" Value="$(AssemblyVersion)" />
+  </Target>
 </Project>

@@ -1,0 +1,246 @@
+name: Release Window Gather
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable tag, for example v2.1.0
+        required: true
+        type: string
+      artifact_signing:
+        description: Windows signing policy
+        required: true
+        type: choice
+        default: auto
+        options: [auto, enabled, disabled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    outputs:
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      version: ${{ steps.prepare.outputs.version }}
+      assembly_version: ${{ steps.prepare.outputs.assembly_version }}
+      commit: ${{ steps.prepare.outputs.commit }}
+      signing_enabled: ${{ steps.prepare.outputs.signing_enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Resolve tag, source and signing policy
+        id: prepare
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          SIGNING_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_signing || 'auto' }}
+          REPOSITORY_SIGNING_ENABLED: ${{ vars.AZURE_ARTIFACT_SIGNING_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          . .\scripts\Release.Common.ps1
+          $version = Get-ReleaseVersion $env:CANDIDATE_TAG
+          $signed = Get-SigningPolicy $env:SIGNING_MODE $env:REPOSITORY_SIGNING_ENABLED
+          Invoke-ReleaseGit fetch --no-tags origin "refs/tags/$($version.Tag):refs/window-gather/requested-tag"
+          $commit = Invoke-ReleaseGit rev-parse 'refs/window-gather/requested-tag^{commit}'
+          if ($env:EVENT_NAME -eq 'push' -and $commit -cne (Invoke-ReleaseGit rev-parse "$($env:EVENT_SHA)^{commit}")) {
+            throw 'Push event and release tag identify different source.'
+          }
+          @("release_tag=$($version.Tag)", "version=$($version.Version)",
+            "assembly_version=$($version.AssemblyVersion)", "commit=$commit",
+            "signing_enabled=$($signed.ToString().ToLowerInvariant())") |
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT
+
+  verify:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Portable quality, release contracts and frontend builds
+        shell: pwsh
+        run: .\scripts\Verify.ps1
+      - name: Required mutation gates (fake desktop services only)
+        shell: pwsh
+        working-directory: WindowGather.Core.Tests
+        run: |
+          dotnet stryker --config-file .\stryker-domain.json --output ..\artifacts\mutation-domain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet stryker --config-file .\stryker-application.json --output ..\artifacts\mutation-application
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  build:
+    needs: [prepare, verify]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Publish and verify managed/native versions
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_RID: ${{ matrix.rid }}
+        run: .\scripts\Release.ps1 -Tag $env:RELEASE_TAG -Runtime $env:RELEASE_RID -Stage Build -ExpectedCommit $env:SOURCE_COMMIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: artifacts/releases/${{ needs.prepare.outputs.release_tag }}/${{ matrix.rid }}
+          if-no-files-found: error
+          retention-days: 7
+
+  package-unsigned:
+    if: needs.prepare.outputs.signing_enabled == 'false'
+    needs: [prepare, build]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: artifacts/releases/${{ needs.prepare.outputs.release_tag }}/${{ matrix.rid }}
+      - name: Verify final unsigned bytes and package
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_RID: ${{ matrix.rid }}
+        run: .\scripts\Release.ps1 -Tag $env:RELEASE_TAG -Runtime $env:RELEASE_RID -Stage Package -ExpectedCommit $env:SOURCE_COMMIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/releases/${{ needs.prepare.outputs.release_tag }}/${{ matrix.rid }}/window-gather-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  package-signed:
+    if: needs.prepare.outputs.signing_enabled == 'true'
+    needs: [prepare, build]
+    runs-on: windows-latest
+    environment: artifact-signing
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.rid }}
+          path: artifacts/releases/${{ needs.prepare.outputs.release_tag }}/${{ matrix.rid }}
+      - name: Check original build identity and required signing configuration
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_RID: ${{ matrix.rid }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          foreach ($name in @('AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'SIGNING_ENDPOINT', 'SIGNING_ACCOUNT', 'SIGNING_PROFILE')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Required signing configuration is missing: $name" }
+          }
+          .\scripts\Release.ps1 -Tag $env:RELEASE_TAG -Runtime $env:RELEASE_RID -Stage ValidateBuild -ExpectedCommit $env:SOURCE_COMMIT
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\artifacts\releases\${{ needs.prepare.outputs.release_tag }}\${{ matrix.rid }}\publish\WindowGather.WinUI.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Require valid signature/timestamp and package final signed bytes
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_RID: ${{ matrix.rid }}
+        run: .\scripts\Release.ps1 -Tag $env:RELEASE_TAG -Runtime $env:RELEASE_RID -Stage Package -ExpectedCommit $env:SOURCE_COMMIT -SigningRequired
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/releases/${{ needs.prepare.outputs.release_tag }}/${{ matrix.rid }}/window-gather-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    if: >-
+      always() && needs.prepare.result == 'success' && needs.build.result == 'success' &&
+      ((needs.package-unsigned.result == 'success' && needs.package-signed.result == 'skipped') ||
+       (needs.package-signed.result == 'success' && needs.package-unsigned.result == 'skipped'))
+    needs: [prepare, build, package-unsigned, package-signed]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify immutable source/assets, generate checksums and publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY

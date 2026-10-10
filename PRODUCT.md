@@ -25,7 +25,7 @@ The current published release is identified by its GitHub tag, not historical
 local development versions. Windows x64 and ARM64 packages are self-contained
 with runtime extraction. Recovery is local and cannot resurrect closed windows.
 No telemetry, analytics, automatic elevation, or display-setting changes.
-Licensing is an unresolved owner decision; no reuse license may be invented.
+The owner selected the MIT License; third-party licenses remain separate.
 Pages setup is not authorized. Private vulnerability reporting is enabled.
 
 ## Evidence on Hand

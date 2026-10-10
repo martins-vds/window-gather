@@ -59,7 +59,5 @@ test windows. [Read the safety rules](CONTRIBUTING.md#test-safely) before runnin
 
 ## License
 
-**Owner decision pending.** No project reuse license has been granted. Public
-source visibility is not permission to reuse, modify or redistribute it.
-Third-party dependencies retain their respective licenses. Do not infer MIT or
-another license from the repository being public.
+Window Gather is licensed under the [MIT License](LICENSE).
+Third-party dependencies retain their respective licenses.

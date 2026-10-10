@@ -1,8 +1,8 @@
 # Contributing to Window Gather
 
 Start with an issue describing the problem or change. Small, focused pull
-requests are easier to review. Licensing remains an owner decision: this
-repository currently grants no project reuse license.
+requests are easier to review. Window Gather is licensed under the
+[MIT License](LICENSE). Contributions are made under the same license.
 
 ## Prerequisites
 

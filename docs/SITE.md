@@ -43,7 +43,8 @@ Do not bypass environment protections to make deployment pass.
 
 ## Licenses and support
 
-No project license was selected. The owner must make that decision separately;
-the docs/site do not grant a reuse license. Private vulnerability reporting was
+The owner selected the [MIT License](../LICENSE) for the project, including its
+documentation and site. Third-party dependencies retain their own licenses.
+Private vulnerability reporting was
 already enabled; no security setting was changed. CODEOWNERS alone does not
 enforce review, and Dependabot configuration does not authorize automatic merges.

@@ -1,4 +1,4 @@
-# Window Gather 2.0.1
+# Window Gather usage
 
 A free, local Windows utility that temporarily brings application windows onto
 one display, then restores only those borrowed windows. Windows already on the
@@ -105,8 +105,9 @@ nor moves destination-resident/new windows.
 Recovery loaded at startup with its destination already absent also requires
 explicit Restore. An unavailable or unreadable display inventory is not treated
 as a disconnect. Physical display identity is used instead of enumeration numbers.
-These changes are in current source; the existing 2.0.1 release artifact and
-legacy release binaries have not been replaced.
+These changes ship in the published v1.0.0 WinUI release. Historical local 2.0.1
+artifacts and legacy release binaries have not been replaced. Tags are the
+release version source; a larger historical local version is not a newer release.
 
 **Forget recovery** requires confirmation. It leaves windows where they are and
 removes the return record. **Exit** does not forget recovery.
@@ -137,7 +138,8 @@ removes the return record. **Exit** does not forget recovery.
 Requires Windows and the SDK pinned in `global.json`. The new frontend uses
 WinUI 3 and CommunityToolkit.Mvvm; the standalone Domain and Application projects
 have no third-party packages. Run these commands from the repository root:
-In the portable ZIP, the repository root is the accompanying `source` folder.
+In current portable packages, extract the accompanying `source.zip` first.
+Older packages may contain an expanded `source` folder.
 
 ```powershell
 .\scripts\Verify.ps1

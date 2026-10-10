@@ -1,0 +1,6 @@
+# Review routing only; protection/rules must be configured separately.
+* @martins-vds
+/.github/workflows/ @martins-vds
+/scripts/ @martins-vds
+/WindowGather.Infrastructure.Windows/ @martins-vds
+/WindowGather.Application/ @martins-vds

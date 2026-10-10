@@ -1,0 +1,97 @@
+<!doctype html>
+<!--
+THESIS: One place to work, without losing where windows belong. Real UI proves it; no feature-card grid.
+OWN-WORLD: Windows system typography, pale blue workspace, ink text, cyan controls and a dark native screenshot.
+STORY: See the tool, download the correct architecture, gather, then return only borrowed windows.
+FIRST VIEWPORT: Left-aligned offer and download beside a large complete real application capture.
+FORM: Brief-pinned screenshot-led product page; quick start, recovery explanation, then contributor path.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Gather Windows application windows onto a selected monitor, then restore only what you borrowed. A portable WinUI desktop utility.">
+  <title>Window Gather — bring your windows here</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="./">Window Gather</a>
+    <nav aria-label="Main navigation">
+      <a href="usage.html">User guide</a>
+      <a href="contributing.html">Developers</a>
+      <a href="https://github.com/martins-vds/window-gather">GitHub</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="opening" aria-labelledby="offer">
+      <div class="offer">
+        <h1 id="offer">Your windows.<br>One place to work.</h1>
+        <p class="lead">Bring windows from other monitors onto the display you choose.
+          When you're done, return <strong>only what you borrowed.</strong></p>
+        <a class="download" href="https://github.com/martins-vds/window-gather/releases/latest">Download for Windows <span aria-hidden="true">↓</span></a>
+        <p class="download-note">Choose x64 or ARM64 · Extract · Run the EXE<br>No separate .NET installation</p>
+        <p class="small">Windows 10 1809+ / Windows 11. Currently unsigned:
+          <a href="security.html#release-integrity">verify the release checksums</a>
+          and follow your security policy.</p>
+      </div>
+      <figure class="app-proof">
+        <a href="images/window-gather.jpg" aria-label="Open full-size Window Gather screenshot">
+          <img src="images/window-gather.jpg" width="1140" height="1170" alt="Real WinUI interface with two simulated displays, a selected destination, Gather and Restore buttons and a pinned shortcut footer">
+        </a>
+        <figcaption>Real WinUI preview. Simulated monitors and windows; the development
+          title is not the published release version.</figcaption>
+      </figure>
+    </section>
+    <section class="start" aria-labelledby="start">
+      <h2 id="start">A small tool.<br>A shorter trip back.</h2>
+      <ol class="steps">
+        <li><h3>Choose your display</h3><p>Click the monitor preview or use the dropdown.
+          Identify displays puts labels on your physical monitors.</p></li>
+        <li><h3>Gather your windows</h3><p>Bring movable windows from the other displays
+          into your current workspace. Recovery is saved before movement.</p></li>
+        <li><h3>Restore what you borrowed</h3><p>Return gathered windows to their saved
+          placements. Destination-resident windows remain untouched.</p></li>
+      </ol>
+      <a class="text-link" href="usage.html">Read the complete user guide <span aria-hidden="true">→</span></a>
+    </section>
+    <section class="recovery" aria-labelledby="recovery">
+      <div>
+        <h2 id="recovery">Unplugging isn't<br>forgetting.</h2>
+        <p>If the gathering destination disconnects, Window Gather makes one
+          automatic attempt to return available borrowed windows.</p>
+        <p>Unavailable or failed returns stay pending. Reconnect the monitor,
+          then explicitly Restore. Reconnection alone never moves your windows.</p>
+        <p>Closed applications cannot be reopened by recovery. Elevated or protected
+          applications may refuse movement. Pending errors remain visible.</p>
+        <a class="text-link" href="usage.html">Recovery and troubleshooting <span aria-hidden="true">→</span></a>
+      </div>
+      <aside>
+        <h3>Keep it close, not in the way.</h3>
+        <p>Closing the window hides it in the notification area.
+          Reopen it from the tray, or use Exit to stop the app.</p>
+        <h3>Your shortcuts, your choice.</h3>
+        <p>Gather defaults to <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>F11</kbd>.
+          Change shortcuts if registration warns you; Windows reserves the preserved
+          F12 Restore default for debuggers.</p>
+        <a href="images/shortcuts.jpg">View the real shortcut settings preview</a>
+      </aside>
+    </section>
+    <section class="developer" aria-labelledby="developer">
+      <div><h2 id="developer">Understand the tool.<br>Improve the code.</h2>
+      <p>Pure domain rules. Portable use cases. Native Windows adapters.
+        A WinUI presentation that depends inward, not the other way around.</p></div>
+      <div class="developer-links">
+        <a href="contributing.html">Set up and contribute <span aria-hidden="true">→</span></a>
+        <a href="architecture.html">Architecture and quality <span aria-hidden="true">→</span></a>
+        <a href="releases.html">Release engineering <span aria-hidden="true">→</span></a>
+        <a href="security.html">Report a vulnerability privately <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+  </main>
+  <footer><p>Window Gather · A local Windows utility. No telemetry.</p>
+    <p>License decision pending; no project reuse license granted.
+      <a href="https://github.com/martins-vds/window-gather">Source &amp; issues</a></p></footer>
+</body>
+</html>

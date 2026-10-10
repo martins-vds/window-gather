@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible Window Gather problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues belong in private reporting (see SECURITY.md).
+        Do not include private titles, credentials, recovery JSON or document contents.
+  - type: input
+    id: version
+    attributes:
+      label: Version and architecture
+      description: Release tag or source commit, x64/ARM64; not only a preview title.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version/build
+    validations:
+      required: true
+  - type: textarea
+    id: topology
+    attributes:
+      label: Displays and scaling
+      description: Monitor count, arrangement, resolution/DPI scaling, connected/disconnected changes; no private identifiers needed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include Gather/Restore/reconnect sequence and whether windows were elevated/minimized/maximized.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+      description: Include sanitized error text and which windows remained pending. Redact screenshots.
+    validations:
+      required: true

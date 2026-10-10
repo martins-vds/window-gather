@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      test-tooling:
+        patterns: ["Microsoft.NET.Test.Sdk", "xunit*", "coverlet.*"]
+      windows-presentation:
+        patterns: ["Microsoft.WindowsAppSDK", "CommunityToolkit.Mvvm"]

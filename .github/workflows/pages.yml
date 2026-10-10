@@ -1,0 +1,56 @@
+name: Documentation site
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      configured: ${{ steps.pages-state.outputs.configured }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and check canonical documentation
+        shell: pwsh
+        run: ./scripts/Test-Site.ps1
+      - name: Inspect Pages availability without enabling it
+        id: pages-state
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $response = Invoke-WebRequest -Uri "https://api.github.com/repos/${{ github.repository }}/pages" `
+            -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } -SkipHttpErrorCheck
+          if ($response.StatusCode -eq 404) {
+            'configured=false' >> $env:GITHUB_OUTPUT
+            'Pages is not configured or not visible to this token; build validated, deployment skipped.' >> $env:GITHUB_STEP_SUMMARY
+          } elseif ($response.StatusCode -eq 200) {
+            $pages = $response.Content | ConvertFrom-Json
+            if ($pages.build_type -ne 'workflow') { throw 'Select GitHub Actions as the Pages source before deploying this workflow.' }
+            'configured=true' >> $env:GITHUB_OUTPUT
+          } else { throw "Pages inspection failed with HTTP $($response.StatusCode)." }
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: artifacts/site
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.build.outputs.configured == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        with:
+          enablement: false
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deployment

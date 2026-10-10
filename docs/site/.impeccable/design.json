@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-10T01:28:02.853Z",
+  "title": "Design System: Window Gather website",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Pale-blue paper",
+        "tonalRamp": ["oklch(15% 0.0110 243.65)", "oklch(26% 0.0110 243.65)", "oklch(38% 0.0110 243.65)", "oklch(49% 0.0110 243.65)", "oklch(61% 0.0110 243.65)", "oklch(72% 0.0110 243.65)", "oklch(84% 0.0110 243.65)", "oklch(95% 0.0110 243.65)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Deep Windows ink",
+        "tonalRamp": ["oklch(15% 0.0557 247.19)", "oklch(26% 0.0557 247.19)", "oklch(38% 0.0557 247.19)", "oklch(49% 0.0557 247.19)", "oklch(61% 0.0557 247.19)", "oklch(72% 0.0557 247.19)", "oklch(84% 0.0557 247.19)", "oklch(95% 0.0557 247.19)"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Reading blue-grey",
+        "tonalRamp": ["oklch(15% 0.0484 243.68)", "oklch(26% 0.0484 243.68)", "oklch(38% 0.0484 243.68)", "oklch(49% 0.0484 243.68)", "oklch(61% 0.0484 243.68)", "oklch(72% 0.0484 243.68)", "oklch(84% 0.0484 243.68)", "oklch(95% 0.0484 243.68)"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Cyan-teal accent",
+        "tonalRamp": ["oklch(15% 0.0904 226.12)", "oklch(26% 0.0904 226.12)", "oklch(38% 0.0904 226.12)", "oklch(49% 0.0904 226.12)", "oklch(61% 0.0904 226.12)", "oklch(72% 0.0904 226.12)", "oklch(84% 0.0904 226.12)", "oklch(95% 0.0904 226.12)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Divider blue",
+        "tonalRamp": ["oklch(15% 0.0320 240.72)", "oklch(26% 0.0320 240.72)", "oklch(38% 0.0320 240.72)", "oklch(49% 0.0320 240.72)", "oklch(61% 0.0320 240.72)", "oklch(72% 0.0320 240.72)", "oklch(84% 0.0320 240.72)", "oklch(95% 0.0320 240.72)"]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "Control white",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(26% 0 0)", "oklch(38% 0 0)", "oklch(49% 0 0)", "oklch(61% 0 0)", "oklch(72% 0 0)", "oklch(84% 0 0)", "oklch(95% 0 0)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Fluid first-level index heading." },
+      "headline": { "displayName": "Headline", "purpose": "Fluid second-level index headings; document pages override size." },
+      "title": { "displayName": "Title", "purpose": "Third-level headings." },
+      "body": { "displayName": "Body", "purpose": "Open prose rhythm with a maximum 70ch paragraph measure." },
+      "lead": { "displayName": "Lead", "purpose": "Muted introduction with a 37ch measure." },
+      "small": { "displayName": "Supporting copy", "purpose": "Advisories, captions and footer; captions use line-height 1.5." },
+      "code": { "displayName": "Code", "purpose": "Document code; keyboard keys retain the prose family." }
+    },
+    "shadows": [
+      { "name": "application-proof-only", "value": "0 20px 40px #102c4426", "purpose": "Observed application-image treatment, not a generic elevation token." }
+    ],
+    "motion": [
+      { "name": "application-proof-settle-only", "value": "settle 600ms cubic-bezier(.16, 1, .3, 1) both", "purpose": "Image-only reveal inside prefers-reduced-motion: no-preference; settle animates clip-path from inset(0 0 3% 0) to inset(0)." }
+    ],
+    "breakpoints": [
+      { "name": "stacked-reading-layout", "value": "760px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Download Link",
+      "kind": "button",
+      "refersTo": "download",
+      "description": "The existing primary link control; not a synthesized form button.",
+      "html": "<a class=\"ds-download\" href=\"https://github.com/martins-vds/window-gather/releases/latest\">Download for Windows <span aria-hidden=\"true\">↓</span></a>",
+      "css": ".ds-download { display: inline-flex; justify-content: space-between; gap: 32px; align-items: center; background: var(--accent, #006582); color: white; font-family: \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif; font-size: 16px; line-height: 1.65; font-weight: 650; padding: 16px 22px; text-decoration: none; border-radius: 5px; margin-top: 10px; } .ds-download:hover { background: #004c63; color: white; } .ds-download:focus-visible { outline: 3px solid var(--accent, #006582); outline-offset: 5px; border-radius: 2px; }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-link",
+      "description": "Visible wrapping text navigation, with no invented menu or selected state.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"usage.html\">User guide</a><a href=\"contributing.html\">Developers</a><a href=\"https://github.com/martins-vds/window-gather\">GitHub</a></nav>",
+      "css": ".ds-nav { display: flex; flex-wrap: wrap; gap: 28px; font-family: \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif; line-height: 1.65; } .ds-nav a { color: var(--ink, #102c44); font-size: .95rem; text-decoration: underline; text-underline-offset: .2em; } .ds-nav a:hover { color: #003f52; } .ds-nav a:focus-visible { outline: 3px solid var(--accent, #006582); outline-offset: 5px; border-radius: 2px; } @media (max-width: 760px) { .ds-nav { gap: 20px; } }"
+    },
+    {
+      "name": "Emphasized Reading Link",
+      "kind": "custom",
+      "refersTo": "text-link",
+      "description": "An underlined route into the longer documentation.",
+      "html": "<a class=\"ds-text-link\" href=\"usage.html\">Read the complete user guide <span aria-hidden=\"true\">→</span></a>",
+      "css": ".ds-text-link { color: var(--accent, #006582); font-family: \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif; font-size: 16px; line-height: 1.65; font-weight: 650; text-decoration: underline; text-underline-offset: .2em; } .ds-text-link:hover { color: #003f52; } .ds-text-link:focus-visible { outline: 3px solid var(--accent, #006582); outline-offset: 5px; border-radius: 2px; }"
+    },
+    {
+      "name": "Keyboard Keys",
+      "kind": "custom",
+      "refersTo": "keyboard-key",
+      "description": "Static semantic keycaps from the recovery explanation; no interactive states apply.",
+      "html": "<p class=\"ds-shortcut\"><kbd class=\"ds-key\">Ctrl</kbd> + <kbd class=\"ds-key\">Alt</kbd> + <kbd class=\"ds-key\">F11</kbd></p>",
+      "css": ".ds-shortcut { color: var(--ink, #102c44); font-family: \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif; font-size: 16px; line-height: 1.65; margin: 0 0 22px; max-width: 70ch; } .ds-key { font: inherit; font-size: .85em; border: 1px solid var(--line, #b7ccdc); border-bottom-width: 2px; border-radius: 3px; padding: 2px 5px; white-space: nowrap; background: white; }"
+    },
+    {
+      "name": "Document Code Block",
+      "kind": "custom",
+      "refersTo": "code-block",
+      "description": "The implemented document code styling; specimen text is illustrative, with no invented state.",
+      "html": "<pre class=\"ds-code-block\"><code>Window Gather</code></pre>",
+      "css": ".ds-code-block { overflow-x: auto; background: var(--ink, #102c44); color: #f3f8fc; padding: 20px; border-radius: 5px; font-family: \"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif; font-size: 16px; line-height: 1.65; } .ds-code-block code { font-family: Consolas, monospace; font-size: .9em; overflow-wrap: normal; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Windows Reading Workspace",
+    "overview": "A pale-blue reading workspace uses Windows system typography, deep ink text and restrained cyan-teal actions. Its identity is native-adjacent, not a replacement design for the Windows executable. Real application imagery provides product evidence; the surrounding website remains light and readable.\n\nThe visual system favors generous section spacing, clear heading hierarchy, underlined links and thin dividing lines. Most surfaces are flat; a tonal contributor panel and the lifted application image provide bounded contrast.",
+    "keyCharacteristics": [
+      "Pale-blue canvas with ink text and cyan-teal links.",
+      "Windows system typography with fluid, tightly set headings.",
+      "Open reading sections, thin rules and restrained corners.",
+      "Real native imagery, separated from website styling."
+    ],
+    "rules": [
+      { "name": "The Reading Canvas Rule", "body": "Keep the website light; the dark application capture is evidence, not the website's theme.", "section": "colors" },
+      { "name": "The Windows Voice Rule", "body": "Use the existing system-font stack for website headings and prose; reserve the distinct monospace stack for code.", "section": "typography" },
+      { "name": "The Bounded Depth Rule", "body": "Preserve the current distinction between flat reading sections, the tonal contributor panel and the lifted application image.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** keep the pale-blue canvas, ink hierarchy and cyan-teal link roles.",
+      "**Do** preserve Windows system typography and readable prose measures.",
+      "**Do** retain underlines, the keyboard-visible focus outline and the skip link.",
+      "**Do** keep real application imagery distinct from website components.",
+      "**Do** preserve source order when the existing grids stack on mobile."
+    ],
+    "donts": [
+      "**Don't** convert the dark application screenshot into a website dark-theme mandate.",
+      "**Don't** invent form controls, generic cards or states absent from the stylesheet.",
+      "**Don't** promote index-page composition or image-only treatments into universal rules.",
+      "**Don't** treat synthesized sidecar color ramps as shipped palette tokens.",
+      "**Don't** apply this website record to the native executable."
+    ]
+  }
+}

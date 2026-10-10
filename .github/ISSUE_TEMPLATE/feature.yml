@@ -1,0 +1,21 @@
+name: Feature request
+description: Explain the user problem and intended outcome.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private window titles, credentials or recovery snapshots.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and context
+      description: What workflow is difficult today? Include version, Windows/display/scaling context where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Explain expected behavior and alternatives, especially effects on borrowed/resident windows and recovery.
+    validations:
+      required: true

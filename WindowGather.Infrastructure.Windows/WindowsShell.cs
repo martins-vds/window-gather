@@ -12,6 +12,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     private readonly uint taskbarCreated;
     private readonly string className = "WindowGather.Shell." + Guid.NewGuid().ToString("N");
     private readonly uint ownerThread;
+    private readonly nint icon;
     private nint window;
     private bool added;
     private IReadOnlyList<Display> displays = [];
@@ -28,9 +29,10 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     private const nuint TopologyTimer = 1;
     internal nint MessageWindow => window;
 
-    public WindowsShell(Func<Action, Task> dispatch)
+    public WindowsShell(Func<Action, Task> dispatch, nint icon = 0)
     {
         this.dispatch = dispatch;
+        this.icon = icon;
         ownerThread = ShellNative.GetCurrentThreadId();
         procedure = ProcessMessage;
         taskbarCreated = ShellNative.RegisterWindowMessage("TaskbarCreated");
@@ -90,7 +92,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     private ShellNative.NotifyIconData IconData() => new()
     {
         Size = (uint)Marshal.SizeOf<ShellNative.NotifyIconData>(), Window = window, Id = 1,
-        Flags = 7, Callback = 0x8001, Icon = ShellNative.LoadIcon(0, 32512), Tip = "Window Gather",
+        Flags = 7, Callback = 0x8001, Icon = icon != 0 ? icon : ShellNative.LoadIcon(0, 32512), Tip = "Window Gather",
         Info = "", InfoTitle = ""
     };
 

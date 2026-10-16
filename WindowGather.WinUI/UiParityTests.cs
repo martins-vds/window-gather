@@ -22,7 +22,9 @@ internal static class UiParityTests
         startup.Refresh();
         using var model = new MainViewModel(coordinator, shortcuts, dispatcher, startup: startup);
         model.UpdateShortcuts(shortcuts.Activate(ShortcutSettings.Defaults));
-        var window = new MainWindow(model, () => shortcuts.Settings);
+        using var icon = new NativeApplicationIcon();
+        Check(icon.LargeIcon != 0 && icon.SmallIcon != 0, "Embedded executable icon has window and tray sizes.");
+        var window = new MainWindow(model, () => shortcuts.Settings, icon.LargeIcon);
         Check(!window.AppWindow.IsVisible, "Constructing the tray-launch window does not show or activate it.");
         window.ShowWindow();
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"), "RUNNING");
@@ -170,7 +172,7 @@ internal static class UiParityTests
                 "partial restore, destination disconnect, durable pending warning, reconnect without movement, " +
                 "error visibility, pinned footer with simultaneous warnings, one summary, compact layout, light/dark themes, " +
                 "default-off primary options, dependent binding, durable primary session, recovery option lock, restart, " +
-                "startup option enable/disable/failure, initially hidden window, close-to-hide and reopen.");
+                "startup option enable/disable/failure, embedded application icon, initially hidden window, close-to-hide and reopen.");
         }
         catch (Exception error)
         {

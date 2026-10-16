@@ -67,6 +67,15 @@ seconds. Local verification simulated taskbar recreation; it did not kill
 Explorer. The legacy Ctrl+Alt+F12 default is preserved, with its documented
 Windows debugger reservation shown in settings.
 
+The WinUI executable embeds the original `assets\window-gather.ico` artwork:
+overlapping windows entering a blue monitor, with transparent 16/20/24/32/40/48/
+64/128/256-pixel frames. The same executable resource supplies the window/taskbar
+and tray icons through lifetime-owned native handles; no runtime asset sidecar is
+required, including single-file publishing. The SVG is the editable source.
+Regenerate on Windows with `.\scripts\Build-Icon.ps1`; `-Preview` writes PNG frames
+to the chosen `-OutputDirectory`. `.\scripts\Test-Icon.ps1` validates all ICO frames;
+`-Executable <path>` also compares the embedded EXE artwork to the source icon.
+
 ### Optional sign-in startup
 
 `StartupController` and `IStartupRegistration` are portable Application contracts;

@@ -15,6 +15,7 @@
     <DefineConstants Condition="'$(UiTestBuild)' == 'true'">$(DefineConstants);UI_PARITY_TEST</DefineConstants>
     <DefineConstants Condition="'$(UiTestBuild)' == 'true' and '$(UiPreviewBuild)' == 'true'">$(DefineConstants);UI_PREVIEW</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\assets\window-gather.ico</ApplicationIcon>
     <ApplicationManifest Condition="'$(ReleaseTag)' != ''">$(BaseIntermediateOutputPath)release-$(RuntimeIdentifier)-$(AssemblyVersion).manifest</ApplicationManifest>
     <AssemblyName>WindowGather.WinUI</AssemblyName>
   </PropertyGroup>

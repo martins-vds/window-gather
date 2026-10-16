@@ -14,6 +14,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private MainViewModel? model;
     private OperationCoordinator? coordinator;
     private NativeWindowTracker? tracker;
+    private NativeApplicationIcon? icon;
 #endif
 
     public App()
@@ -81,13 +82,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                 }
                 return (engine, store, settings, warning, autostart);
             });
-            shell = new WindowsShell(dispatcher.InvokeAsync);
+            icon = new NativeApplicationIcon();
+            shell = new WindowsShell(dispatcher.InvokeAsync, icon.SmallIcon);
             identifier = new NativeDisplayIdentifier();
             shortcuts = new ShortcutController(shell, startup.store);
             coordinator = new OperationCoordinator(startup.engine);
             model = new MainViewModel(coordinator, shortcuts, dispatcher, startup.warning, startup.autostart);
             model.UpdateShortcuts(shortcuts.Activate(startup.settings));
-            window = new MainWindow(model, () => shortcuts.Settings);
+            window = new MainWindow(model, () => shortcuts.Settings, icon.LargeIcon);
             window.ExitRequested += ExitApplication;
             model.AttentionRequested += () =>
             {
@@ -161,6 +163,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         shell?.Dispose();
         model?.Dispose();
         window?.ExitWindow();
+        icon?.Dispose();
         mutex?.Dispose();
         mutex = null;
         Exit();

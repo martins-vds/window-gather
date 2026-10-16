@@ -18,11 +18,12 @@ public sealed partial class MainWindow : Window
     public MainViewModel ViewModel { get; }
     public event Action? ExitRequested;
 
-    public MainWindow(MainViewModel model, Func<ShortcutSettings> getSettings)
+    public MainWindow(MainViewModel model, Func<ShortcutSettings> getSettings, nint icon = 0)
     {
         ViewModel = model;
         this.getSettings = getSettings;
         InitializeComponent();
+        if (icon != 0) AppWindow.SetIcon(Microsoft.UI.Win32Interop.GetIconIdFromIcon(icon));
         Version version = typeof(App).Assembly.GetName().Version
             ?? throw new InvalidOperationException("Application version metadata is missing.");
         Title = $"Window Gather {version.ToString(3)}";

@@ -15,6 +15,7 @@ try {
     Set-Location (Split-Path $PSScriptRoot -Parent)
     & .\scripts\VerifyDependencies.ps1
     & .\scripts\Test-Release.ps1
+    & .\scripts\Test-Icon.ps1
     Invoke-Dotnet tool restore
     Invoke-Dotnet restore .\WindowGather.slnx --locked-mode --nologo
     Invoke-Dotnet run --project .\WindowGather.Infrastructure.Windows.Tests\WindowGather.Infrastructure.Windows.Tests.csproj -c Release --no-restore
@@ -26,6 +27,7 @@ try {
     Invoke-Dotnet reportgenerator "-reports:$($coverage[0].FullName)" "-targetdir:$report" '-reporttypes:Html;Xml;TextSummary'
     Invoke-Dotnet run --project .\WindowGather.Quality\WindowGather.Quality.csproj -c Release -- $report $coverage[0].FullName
     Invoke-Dotnet build .\WindowGather.WinUI\WindowGather.WinUI.csproj -c Release '-p:UiTestBuild=false' --nologo
+    & .\scripts\Test-Icon.ps1 -Executable .\WindowGather.WinUI\bin\Release\net10.0-windows10.0.19041.0\win-x64\WindowGather.WinUI.exe
     Invoke-Dotnet build .\WindowGather\WindowGather.csproj -c Release --nologo
     if ($Native -or $LegacyUi) {
         $selectors = @()

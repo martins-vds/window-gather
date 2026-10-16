@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "windowgather.application": {
+        "type": "Project",
+        "dependencies": {
+          "WindowGather.Domain": "[2.0.1, )"
+        }
+      },
+      "windowgather.domain": {
+        "type": "Project"
+      },
+      "windowgather.infrastructure.windows": {
+        "type": "Project",
+        "dependencies": {
+          "WindowGather.Application": "[2.0.1, )"
+        }
+      }
+    }
+  }
+}

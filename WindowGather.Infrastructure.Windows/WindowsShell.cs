@@ -24,6 +24,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
     public event Action<Display>? GatherRequested;
     public event Action<string>? Problem;
     public event Action? TopologyChanged;
+    public event Action? PrimaryObservationRequested;
     private const nuint TopologyTimer = 1;
     internal nint MessageWindow => window;
 
@@ -60,7 +61,8 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
         canGather = !state.IsBusy && !state.HasRecovery;
         canRestore = !state.IsBusy && state.HasRecovery;
         var data = IconData();
-        data.Tip = state.HasRecovery ? $"Window Gather - {state.BorrowedCount} borrowed windows" : "Window Gather - ready";
+        data.Tip = state.HasPrimaryRecovery ? "Window Gather - window/primary recovery available" :
+            state.HasRecovery ? $"Window Gather - {state.BorrowedCount} borrowed windows" : "Window Gather - ready";
         if (state.RecoveryWarning.Length > 0) data.Tip = "Window Gather - recovery/display check needs attention";
         if (!ShellNative.ShellNotifyIcon(1, ref data))
             throw Error("Cannot update the notification-area icon");
@@ -99,6 +101,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
             if (message == 0x0312) HotkeyPressed?.Invoke((int)wParam);
             else if (message == 0x007E || (message == 0x001A && wParam == 47))
             {
+                PrimaryObservationRequested?.Invoke();
                 if (ShellNative.SetTimer(window, TopologyTimer, 500, 0) == 0)
                     throw Error("Cannot schedule a display-layout recheck");
             }
@@ -131,7 +134,7 @@ public sealed class WindowsShell : IHotkeyBackend, IDisposable
             AddMenu(menu, 1, "Open Window Gather", true);
             for (int i = 0; i < displays.Count; i++)
                 AddMenu(menu, (uint)(1000 + i), "Gather onto " + displays[i], canGather);
-            AddMenu(menu, 2, "Restore borrowed windows", canRestore);
+            AddMenu(menu, 2, "Restore session", canRestore);
             AddMenu(menu, 3, "Identify displays", !busy && displays.Count > 0);
             AddMenu(menu, 4, "Change shortcuts...", !busy);
             AddMenu(menu, 5, "Forget recovery...", canRestore);

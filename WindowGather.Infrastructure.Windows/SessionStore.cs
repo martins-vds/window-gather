@@ -23,7 +23,18 @@ public sealed class SessionStore(string directory) : ISessionStore
                 w.Placement is null || w.Placement.Normal.Width <= 0 ||
                 w.Placement.Normal.Height <= 0 || w.Origin is null ||
                 string.IsNullOrWhiteSpace(w.Origin.Id) || w.Origin.WorkArea.Width <= 0 ||
-                w.Origin.WorkArea.Height <= 0 || w.Origin.Id == data.Target.Id))
+                w.Origin.WorkArea.Height <= 0 || w.Origin.Id == data.Target.Id) ||
+            (data.Primary is { } primary && (string.IsNullOrWhiteSpace(primary.OriginalId) ||
+                !Enum.IsDefined(primary.Phase) || primary.Followers is null ||
+                primary.Followers.Count > 10000 || (!primary.FollowNewWindows && primary.Followers.Count != 0) ||
+                (primary.FollowTargetId is not null && string.IsNullOrWhiteSpace(primary.FollowTargetId)) ||
+                primary.Followers.Any(w => w is null || w.Handle == 0 || w.ProcessId <= 0 ||
+                    w.ProcessStartedUtcTicks <= 0 || string.IsNullOrWhiteSpace(w.ClassName) ||
+                    w.Placement is null || w.Placement.Normal.Width <= 0 || w.Placement.Normal.Height <= 0 ||
+                    w.Origin is null || w.Origin.Id != data.Target.Id ||
+                    w.Origin.WorkArea.Width <= 0 || w.Origin.WorkArea.Height <= 0) ||
+                primary.Followers.Select(w => w.Handle).Distinct().Count() != primary.Followers.Count ||
+                primary.Followers.Any(w => data.Windows.Any(b => b.Handle == w.Handle)))))
             throw new InvalidDataException($"The recovery file has invalid data: {path}");
         return data.ToSession();
     }
@@ -76,6 +87,8 @@ public sealed class SessionStore(string directory) : ISessionStore
 
     private sealed record SessionData(int Version, string Token, DateTime CreatedUtc, DisplayData Target, List<WindowData> Windows)
     {
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public PrimaryData? Primary { get; init; }
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
         public bool AutomaticReturnAttempted { get; init; }
 
@@ -83,10 +96,23 @@ public sealed class SessionStore(string directory) : ISessionStore
         {
             Version = Version, Token = Token, CreatedUtc = CreatedUtc, Target = Target.ToDisplay(),
             Windows = Windows.Select(w => w.ToWindow()).ToList(),
-            AutomaticReturnAttempted = AutomaticReturnAttempted
+            AutomaticReturnAttempted = AutomaticReturnAttempted, Primary = Primary?.ToRecovery()
         };
         public static SessionData From(GatherSession session) => new(session.Version, session.Token,
             session.CreatedUtc, DisplayData.From(session.Target), session.Windows.Select(WindowData.From).ToList())
-            { AutomaticReturnAttempted = session.AutomaticReturnAttempted };
+            { AutomaticReturnAttempted = session.AutomaticReturnAttempted, Primary = PrimaryData.From(session.Primary) };
+    }
+
+    private sealed record PrimaryData(string OriginalId, PrimaryPhase Phase, bool FollowNewWindows,
+        bool TrackingInterrupted, bool RestoreStarted, string? FollowTargetId, List<WindowData> Followers)
+    {
+        public PrimaryRecovery ToRecovery() => new(OriginalId, Phase, FollowNewWindows)
+        {
+            TrackingInterrupted = TrackingInterrupted, RestoreStarted = RestoreStarted,
+            FollowTargetId = FollowTargetId, Followers = Followers.Select(w => w.ToWindow()).ToList()
+        };
+        public static PrimaryData? From(PrimaryRecovery? recovery) => recovery is null ? null :
+            new(recovery.OriginalId, recovery.Phase, recovery.FollowNewWindows, recovery.TrackingInterrupted,
+                recovery.RestoreStarted, recovery.FollowTargetId, recovery.Followers.Select(WindowData.From).ToList());
     }
 }

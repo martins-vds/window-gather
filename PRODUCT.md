@@ -24,7 +24,13 @@ borrowed windows. Destination-resident windows stay untouched.
 The current published release is identified by its GitHub tag, not historical
 local development versions. Windows x64 and ARM64 packages are self-contained
 with runtime extraction. Recovery is local and cannot resurrect closed windows.
-No telemetry, analytics, automatic elevation, or display-setting changes.
+No telemetry, analytics or automatic elevation. Current source can temporarily
+change the Windows primary display only through an off-by-default gathering option.
+An independent off-by-default option lets recorded new windows follow the primary
+on explicit Restore. These options are not in the existing v1.0.0 release.
+Current source also has an off-by-default Start with Windows option that registers
+the current user's executable for quiet tray launch after sign-in. Windows startup
+approval/policy remains authoritative; this is not in v1.0.0 either.
 The owner selected the MIT License; third-party licenses remain separate.
 Pages setup is not authorized. Private vulnerability reporting is enabled.
 

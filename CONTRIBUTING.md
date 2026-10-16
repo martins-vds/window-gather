@@ -46,6 +46,10 @@ For safe UI exploration instead, use the isolated preview described below.
 ## Test safely
 
 Portable tests use fake desktop services; they do not gather real user windows.
+`Verify.ps1` also runs Windows adapter/storage/lifecycle contracts using injected
+native APIs; these tests do not change the host primary display or install hooks.
+Real primary-display write tests require a suitable multi-monitor desktop and
+explicit permission to change that user's Windows settings; they are not normal CI.
 Normal CI also builds/publishes without launching the app. Mutation runs are
 expensive and separate from the fast local loop:
 

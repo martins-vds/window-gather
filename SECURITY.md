@@ -37,9 +37,24 @@ files, not encrypted storage, and are not a defense against another process
 running as the same Windows user. Do not delete recovery casually: it holds
 the return positions for borrowed windows.
 
-The app has no telemetry, networking, auto-update or display-setting changes.
+The app has no telemetry, networking or auto-update. Current source has an explicit
+off-by-default option to change the Windows primary display during Gather. This
+is a Windows-wide setting (including staged per-user display configuration), not
+an app-only layout. Recovery journals the original primary before switching.
+Partial native/storage failures can require manual Windows display-settings
+recovery. Forget intentionally abandons reversal; Exit does not revert settings.
+Do not enable the option on someone else's desktop without their permission.
 GitHub download/build tooling is separate from the runtime executable.
 Use least privilege; do not bypass OS warnings on another user's behalf.
+
+Current source also offers explicit, off-by-default **Start with Windows**.
+Enabling writes only the current user's `WindowGather` Run value under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, pointing at the quoted
+executable with `--startup`. Disabling removes only a recognized app entry.
+There is no service, scheduled task, administrator requirement or automatic
+startup-registration repair. Windows Startup apps approval/policy is not changed
+or bypassed. Keep the portable executable in a trusted, stable location; disable
+startup before removing it. Registration errors remain visible in the app.
 
 ## Release integrity
 

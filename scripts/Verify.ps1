@@ -17,6 +17,7 @@ try {
     & .\scripts\Test-Release.ps1
     Invoke-Dotnet tool restore
     Invoke-Dotnet restore .\WindowGather.slnx --locked-mode --nologo
+    Invoke-Dotnet run --project .\WindowGather.Infrastructure.Windows.Tests\WindowGather.Infrastructure.Windows.Tests.csproj -c Release --no-restore
     $run = Join-Path 'artifacts' ('coverage-' + [guid]::NewGuid().ToString('N'))
     Invoke-Dotnet test .\WindowGather.Core.Tests\WindowGather.Core.Tests.csproj -c Release --nologo '--collect:XPlat Code Coverage' --results-directory $run
     $coverage = @(Get-ChildItem -LiteralPath $run -Recurse -Filter coverage.cobertura.xml)

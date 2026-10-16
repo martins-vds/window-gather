@@ -5,7 +5,7 @@ using System.Text;
 
 namespace WindowGather;
 
-public sealed class NativeDesktop : IDesktop
+public sealed class NativeDesktop : IDesktop, IWindowInspector
 {
     private const uint DefaultNearest = 2;
     private const int GwlExStyle = -20;
@@ -86,6 +86,36 @@ public sealed class NativeDesktop : IDesktop
         using Process process = Process.GetProcessById(checked((int)pid));
         return new(handle.ToInt64(), (int)pid, process.StartTime.ToUniversalTime().Ticks,
             ReadClass(handle), ReadPlacement(handle), ReadDisplay(Native.MonitorFromWindow(handle, DefaultNearest)));
+    }
+
+    public SavedWindow? CaptureFollower(nint handle, string token, Display target)
+    {
+        using var dpi = new DpiScope();
+        if (!Eligible(handle)) return null;
+        Native.GetWindowThreadProcessId(handle, out uint pid);
+        if (pid == Environment.ProcessId || ReadDisplay(Native.MonitorFromWindow(handle, DefaultNearest)).Id != target.Id)
+            return null;
+        if (!Native.SetProp(handle, PropertyName(token), 1)) throw LastError("Cannot track this new window safely");
+        try
+        {
+            SavedWindow window = CaptureWindow(handle);
+            if (!Matches(window, token) || window.Origin.Id != target.Id)
+                throw new InvalidOperationException("The new window changed during capture.");
+            return window;
+        }
+        catch
+        {
+            if (Native.GetProp(handle, PropertyName(token)) == 1) Native.RemoveProp(handle, PropertyName(token));
+            throw;
+        }
+    }
+
+    public SavedWindow Inspect(SavedWindow window, string token)
+    {
+        if (!Matches(window, token)) throw new InvalidOperationException("The tracked window has closed or changed identity.");
+        SavedWindow current = CaptureWindow(new nint(window.Handle));
+        if (!Matches(current, token)) throw new InvalidOperationException("The tracked window changed during inspection.");
+        return current;
     }
 
     public bool Matches(SavedWindow window, string token)

@@ -104,6 +104,8 @@ public sealed partial class MainWindow : Window
             labels.Children.Add(MonitorLabel(display.DeviceName.Replace(@"\\.\", ""), 13, button, true));
             if (button.Width >= 95 && button.Height >= 50)
                 labels.Children.Add(MonitorLabel($"{display.Bounds.Width} x {display.Bounds.Height}", 12, button, false));
+            if (display.IsPrimary && button.Height >= 70)
+                labels.Children.Add(MonitorLabel("Primary", 12, button, false));
             button.Content = labels;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Select {display}");
             ToolTipService.SetToolTip(button, display.ToString());
@@ -130,7 +132,19 @@ public sealed partial class MainWindow : Window
     }
 
     private async void ForgetClicked(object sender, RoutedEventArgs args) => await ConfirmForgetAsync();
+    private async void GatherOptionsClicked(object sender, RoutedEventArgs args)
+    {
+        bool primary = PrimaryOption.IsChecked == true;
+        await ViewModel.SaveGatherOptionsAsync(new(primary, primary && FollowOption.IsChecked == true));
+        PrimaryOption.IsChecked = ViewModel.MakeDestinationPrimary;
+        FollowOption.IsChecked = ViewModel.FollowNewWindows;
+    }
     private void ExitClicked(object sender, RoutedEventArgs args) => ExitRequested?.Invoke();
+    private async void StartupClicked(object sender, RoutedEventArgs args)
+    {
+        await ViewModel.SaveStartupAsync(StartupOption.IsChecked == true);
+        StartupOption.IsChecked = ViewModel.StartWithWindows;
+    }
 
     public async Task ConfirmForgetAsync()
     {
@@ -142,7 +156,9 @@ public sealed partial class MainWindow : Window
             var dialog = new ContentDialog
             {
                 XamlRoot = Root.XamlRoot, Title = "Forget recovery?",
-                Content = "This removes return positions without moving any windows. This cannot be undone.",
+                Content = ViewModel.HasPrimaryRecovery
+                    ? "This removes window return positions and primary-display recovery. No windows or Windows display settings will change. Your temporary primary may remain primary. This cannot be undone."
+                    : "This removes return positions without moving any windows. This cannot be undone.",
                 PrimaryButtonText = "Forget recovery", CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close
             };

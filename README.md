@@ -20,7 +20,7 @@ title shows the development version, not the current release version.*
 2. Run `WindowGather.WinUI.exe` directly. Choose the destination in the monitor
    preview or dropdown; **Identify displays** helps match physical monitors.
    Click **Gather to selected display**.
-3. Click **Restore borrowed windows** when finished. Closing the app hides it
+3. Click **Restore session** (or **Restore borrowed windows** in older releases) when finished. Closing the app hides it
    in the notification area; use the tray's **Exit** to stop it.
 
 Requires Windows 10 version 1809 or later, or Windows 11, on x64/ARM64.
@@ -37,7 +37,16 @@ artifacts and the legacy WinForms frontend are not equivalent release versions.
 
 The default Gather shortcut is Ctrl+Alt+F11. The preserved Restore default,
 Ctrl+Alt+F12, may not register because Windows reserves F12 for debuggers;
-use **Change shortcuts...** if warned. No telemetry or display-setting changes.
+use **Change shortcuts...** if warned. No telemetry.
+
+Current source adds two **off-by-default** options: temporarily make the gathering
+destination primary, and have confirmed new windows follow the primary on explicit
+Restore. Existing residents stay excluded. These options are not in the immutable
+v1.0.0 download; see [primary-display behavior](WindowGather/README.md#optional-primary-display-behavior-current-source).
+
+Current source also adds **Start with Windows**, off by default. Enable it to
+start quietly in the notification area after sign-in; disable it to remove the
+per-user registration. See [startup behavior and portable-path caveats](WindowGather/README.md#start-with-windows-current-source).
 
 ## Build, understand, contribute
 

@@ -13,12 +13,17 @@ internal static class UiParityTests
         string directory = Path.Combine(AppContext.BaseDirectory, "ui-test-state-" + Guid.NewGuid().ToString("N"));
         var desktop = new TestDesktop();
         var store = new SessionStore(directory);
-        var coordinator = new OperationCoordinator(new GatherEngine(desktop, store));
+        var coordinator = new OperationCoordinator(new GatherEngine(desktop, store, desktop, desktop, desktop,
+            new GatherPreferencesStore(directory)));
         var shortcuts = new ShortcutController(new TestHotkeys(), new ShortcutStore(directory));
         var dispatcher = new UiDispatcher(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
-        using var model = new MainViewModel(coordinator, shortcuts, dispatcher);
+        var startupRegistration = new TestStartupRegistration();
+        var startup = new StartupController(startupRegistration);
+        startup.Refresh();
+        using var model = new MainViewModel(coordinator, shortcuts, dispatcher, startup: startup);
         model.UpdateShortcuts(shortcuts.Activate(ShortcutSettings.Defaults));
         var window = new MainWindow(model, () => shortcuts.Settings);
+        Check(!window.AppWindow.IsVisible, "Constructing the tray-launch window does not show or activate it.");
         window.ShowWindow();
         File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"), "RUNNING");
         try
@@ -44,18 +49,36 @@ internal static class UiParityTests
             var picker = (ComboBox)root.FindName("DisplayPicker");
             var preview = (Canvas)root.FindName("Preview");
             var details = (TextBox)root.FindName("Details");
+            var startupOption = (CheckBox)root.FindName("StartupOption");
+            Check(startupOption.IsChecked == false && startupOption.IsEnabled &&
+                startupRegistration.Writes == 0, "Startup defaults off without registering the test executable.");
+            await model.SaveStartupAsync(true);
+            await SettleAsync();
+            Check(startupOption.IsChecked == true && !model.HasDetails, "Startup binding reflects verified enable.");
+            startupRegistration.Fail = true;
+            await model.SaveStartupAsync(false);
+            await SettleAsync();
+            Check(startupOption.IsChecked == true && model.HasDetails, "Failed startup save preserves the enabled control.");
+            startupRegistration.Fail = false;
+            await model.SaveStartupAsync(false);
+            await SettleAsync();
+            Check(startupOption.IsChecked == false && !model.HasDetails, "Startup disable clears only the simulated registration.");
             Check(preview.Children.Count == 2 && picker.SelectedItem is Display, "Preview and dropdown populated.");
+            Check(((CheckBox)root.FindName("PrimaryOption")).IsChecked == false &&
+                !((CheckBox)root.FindName("FollowOption")).IsEnabled, "Primary options default off with dependent control disabled.");
+            await CaptureAsync(root, "primary-ui-wide.png");
             model.SelectedDisplay = desktop.Displays[1];
             await SettleAsync();
             Check(Equals(picker.SelectedItem, model.SelectedDisplay), "Preview selection and dropdown synchronized.");
             Check(Equals(preview.Children.OfType<Button>().Single(b => b.BorderThickness.Left == 3).Tag, model.SelectedDisplay),
                 "Preview highlights the same destination.");
             var gather = Descendants(root).OfType<Button>().Single(b => Equals(b.Content, "Gather to selected display"));
-            var restore = Descendants(root).OfType<Button>().Single(b => Equals(b.Content, "Restore borrowed windows"));
+            var restore = Descendants(root).OfType<Button>().Single(b => Equals(b.Content, "Restore session"));
             Check(gather.IsEnabled && !restore.IsEnabled, "Real command bindings initially enabled.");
             await model.GatherCommand.ExecuteAsync(null);
             await SettleAsync();
             Check(!gather.IsEnabled && restore.IsEnabled && !picker.IsEnabled, "Real command bindings and recovery selection lock.");
+            Check(startupOption.IsEnabled, "Startup remains independently editable during saved recovery.");
             Check(preview.Children.OfType<Button>().All(b => !b.IsEnabled), "Preview locks during recovery.");
             Check(store.Load()!.Windows.Count == 1 && desktop.ResidentUnchanged, "Persistent recovery excludes residents.");
             desktop.FailRestore = true;
@@ -107,6 +130,7 @@ internal static class UiParityTests
                 Check(bounds.Left >= 0 && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1,
                     "Compact footer keeps " + name + " visible.");
             }
+            await CaptureAsync(root, "primary-ui-compact.png");
             await model.RestoreCommand.ExecuteAsync(null);
             await SettleAsync();
             Check(!recoveryWarning.IsOpen && !model.HasDetails && desktop.ResidentUnchanged,
@@ -121,8 +145,18 @@ internal static class UiParityTests
             await SettleAsync();
             Check(root.ActualTheme == ElementTheme.Light && Grid.GetRow(restore) == 0 && Grid.GetColumn(gather) == 0,
                 "Wide light window restores side-by-side primary actions.");
+            await model.SaveGatherOptionsAsync(new(true, true));
+            await SettleAsync();
+            Check(model.MakeDestinationPrimary && model.FollowNewWindows && model.CanFollowOptions &&
+                ((CheckBox)root.FindName("PrimaryOption")).IsChecked == true &&
+                ((CheckBox)root.FindName("FollowOption")).IsChecked == true,
+                "Primary options persist and enable dependent following option.");
             await model.GatherCommand.ExecuteAsync(null);
-            var restarted = new GatherEngine(desktop, new SessionStore(directory));
+            await SettleAsync();
+            Check(!((CheckBox)root.FindName("PrimaryOption")).IsEnabled && !model.CanFollowOptions &&
+                model.HasPrimaryRecovery && model.HasRecoveryWarning, "Primary session locks options and shows recovery.");
+            var restarted = new GatherEngine(desktop, new SessionStore(directory), desktop, desktop);
+            desktop.PrimaryId = "test-a";
             Check(restarted.Session is not null && restarted.Restore().Completed == 1, "Recovery is readable across startup.");
             string reference = model.ShortcutReference;
             NativeMessage.RequestSystemClose(WinRT.Interop.WindowNative.GetWindowHandle(window));
@@ -134,7 +168,9 @@ internal static class UiParityTests
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"),
                 "PASS WinUI XAML selection, command invalidation, recovery lock, persistent recovery, resident exclusion, " +
                 "partial restore, destination disconnect, durable pending warning, reconnect without movement, " +
-                "error visibility, pinned footer with simultaneous warnings, one summary, compact layout, light/dark themes, restart, close-to-hide and reopen.");
+                "error visibility, pinned footer with simultaneous warnings, one summary, compact layout, light/dark themes, " +
+                "default-off primary options, dependent binding, durable primary session, recovery option lock, restart, " +
+                "startup option enable/disable/failure, initially hidden window, close-to-hide and reopen.");
         }
         catch (Exception error)
         {
@@ -153,16 +189,50 @@ internal static class UiParityTests
     private static void CleanupTestState(string directory)
     {
         if (!Directory.Exists(directory)) return;
-        foreach (string name in new[] { "session.json", "session.json.tmp", "shortcuts.json", "shortcuts.json.tmp" })
+        foreach (string name in new[] { "session.json", "session.json.tmp", "shortcuts.json", "shortcuts.json.tmp",
+            "gather-options.json", "gather-options.json.tmp" })
             File.Delete(Path.Combine(directory, name));
         Directory.Delete(directory);
     }
 
     private static async Task SettleAsync() => await Task.Delay(150);
+    private static async Task CaptureAsync(FrameworkElement root, string name)
+    {
+        var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
+        await bitmap.RenderAsync(root);
+        var buffer = await bitmap.GetPixelsAsync();
+        using var reader = Windows.Storage.Streams.DataReader.FromBuffer(buffer);
+        byte[] pixels = new byte[buffer.Length];
+        reader.ReadBytes(pixels);
+        string path = Path.Combine(AppContext.BaseDirectory, name);
+        File.WriteAllBytes(path, []);
+        var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+        using var stream = await file.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite);
+        var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(
+            Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
+            Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight,
+            96, 96, pixels);
+        await encoder.FlushAsync();
+    }
     private static void Check(bool success, string message)
     {
         if (!success) throw new InvalidOperationException("UI parity failed: " + message);
     }
+    private sealed class TestStartupRegistration : IStartupRegistration
+    {
+        private bool enabled;
+        public bool Fail;
+        public int Writes;
+        public StartupState Read() => new(enabled);
+        public void SetEnabled(bool value)
+        {
+            if (Fail) throw new IOException("Simulated startup registration denied.");
+            enabled = value;
+            Writes++;
+        }
+    }
+
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
@@ -179,8 +249,16 @@ internal static class UiParityTests
         public void Unregister(int id) { }
     }
 
-    private sealed class TestDesktop : IDesktop
+    private sealed class TestDesktop : IDesktop, IPrimaryDisplay, IWindowInspector, IWindowTracker
     {
+        public string PrimaryId { get; set; } = "test-a";
+        public string GetPrimaryDisplayId() => PrimaryId;
+        public void SetPrimaryDisplay(string displayId) => PrimaryId = displayId;
+        public SavedWindow Inspect(SavedWindow window, string token) => windows[window.Handle];
+        public event Action<SavedWindow>? WindowOpened { add { } remove { } }
+        public event Action<string>? Problem { add { } remove { } }
+        public void Start(string token, Display target) { }
+        public void Stop() { }
         public List<Display> Displays { get; } = [
             new("test-a", @"\\.\DISPLAY1", "Desk", new(-1920, 0, 0, 1080), new(-1920, 0, 0, 1040)),
             new("test-b", @"\\.\DISPLAY4", "Destination", new(0, 0, 1920, 1080), new(0, 40, 1920, 1080))];

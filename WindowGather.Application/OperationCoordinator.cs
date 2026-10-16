@@ -9,6 +9,10 @@ public sealed record ApplicationState(ReadOnlyCollection<Display> Displays, Disp
 {
     public string RecoveryWarning { get; init; } = "";
     public bool IsTopologyCheck { get; init; }
+    public GatherPreferences Preferences { get; init; } = new();
+    public string PreferencesWarning { get; init; } = "";
+    public int FollowerCount { get; init; }
+    public bool HasPrimaryRecovery { get; init; }
 }
 
 public sealed record OperationReply(bool Accepted, string Summary, ReadOnlyCollection<string> Problems)
@@ -39,6 +43,28 @@ public sealed class OperationCoordinator
     public bool HasWorkPending => gate.CurrentCount == 0 ||
         Volatile.Read(ref topologyRequested) != Volatile.Read(ref topologyChecked);
     public event Action<ApplicationState>? StateChanged;
+
+    public Task<OperationReply> SavePreferencesAsync(GatherPreferences preferences) => RunAsync(() =>
+    {
+        engine.SavePreferences(preferences);
+        return new(0, 0, [], "Gathering options saved.");
+    });
+
+    public void ObservePrimary() => engine.ObservePrimary();
+
+    public async Task<OperationReply> NotifyWindowOpenedAsync(SavedWindow window)
+    {
+        string? token = engine.Session?.Token;
+        if (token is null) return new(false, "", Array.AsReadOnly(Array.Empty<string>())) { Announce = false };
+        await gate.WaitAsync().ConfigureAwait(false);
+        return await RunOwnedAsync(() => Task.FromResult(engine.TrackWindow(window, token))).ConfigureAwait(false);
+    }
+
+    public async Task<OperationReply> NotifyTrackingProblemAsync(string problem)
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        return await RunOwnedAsync(() => Task.FromResult(engine.ReportTrackingProblem(problem))).ConfigureAwait(false);
+    }
 
     public Task<OperationReply> ExecuteAsync(OperationKind kind, Display? target = null) =>
         RunAsync(() => kind switch
@@ -101,8 +127,8 @@ public sealed class OperationCoordinator
     }
 
     private static bool SameTopology(IReadOnlyList<Display> first, IReadOnlyList<Display> second) =>
-        first.Select(d => (d.Id, d.Bounds, d.WorkArea)).OrderBy(d => d.Id, StringComparer.Ordinal)
-            .SequenceEqual(second.Select(d => (d.Id, d.Bounds, d.WorkArea)).OrderBy(d => d.Id, StringComparer.Ordinal));
+        first.Select(d => (d.Id, d.Bounds, d.WorkArea, d.IsPrimary)).OrderBy(d => d.Id, StringComparer.Ordinal)
+            .SequenceEqual(second.Select(d => (d.Id, d.Bounds, d.WorkArea, d.IsPrimary)).OrderBy(d => d.Id, StringComparer.Ordinal));
 
     private async Task<OperationReply> RunOwnedAsync(Func<Task<OperationResult>> operation, bool topology = false)
     {
@@ -134,8 +160,10 @@ public sealed class OperationCoordinator
 
     private OperationResult Forget()
     {
+        bool primary = engine.Session?.Primary is not null;
         engine.Forget();
-        return new(0, 0, [], "Recovery forgotten. No windows were moved.");
+        return new(0, 0, [], primary ? "Recovery forgotten. No windows or primary-display settings were changed." :
+            "Recovery forgotten. No windows were moved.");
     }
 
     private ApplicationState Snapshot(IReadOnlyList<Display> displays, bool busy) => new(
@@ -144,6 +172,9 @@ public sealed class OperationCoordinator
     {
         RecoveryWarning = topologyProblem.Length > 0 ? topologyProblem :
             hasDisplaySnapshot ? engine.RecoveryWarning(displays) : "",
+        Preferences = engine.Preferences, PreferencesWarning = engine.PreferencesWarning,
+        FollowerCount = engine.Session?.Primary?.Followers.Count ?? 0,
+        HasPrimaryRecovery = engine.Session?.Primary is not null
     };
 
     private void Publish(ApplicationState next)

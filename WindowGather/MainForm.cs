@@ -356,7 +356,7 @@ public sealed class MainForm : Form
         if (busy || engine.Session is null) return;
         if (MessageBox.Show(this,
             "Forget the saved return positions? Windows will stay where they are now, and you " +
-            "will no longer be able to restore this session.", "Forget recovery",
+            "will no longer be able to restore this session. Any saved primary-display recovery will also be abandoned; Windows display settings will not change.", "Forget recovery",
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
         try
         {

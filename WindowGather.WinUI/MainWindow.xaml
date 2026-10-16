@@ -33,6 +33,20 @@
             <Button Content="Refresh displays" Command="{x:Bind ViewModel.RefreshCommand}" />
           </StackPanel>
         </StackPanel>
+        <StackPanel Spacing="8">
+          <CheckBox x:Name="PrimaryOption" IsChecked="{x:Bind ViewModel.MakeDestinationPrimary, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.CanSelect, Mode=OneWay}" Click="GatherOptionsClicked">
+            <TextBlock Text="Make the gathering destination the primary display" TextWrapping="Wrap" />
+          </CheckBox>
+          <CheckBox x:Name="FollowOption" IsChecked="{x:Bind ViewModel.FollowNewWindows, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.CanFollowOptions, Mode=OneWay}" Click="GatherOptionsClicked">
+            <TextBlock Text="New windows follow the primary display on Restore" TextWrapping="Wrap" />
+          </CheckBox>
+          <TextBlock Text="Optional Windows-wide setting. Restore reverses our primary change unless you changed it yourself. Only recorded new windows still on this destination follow; existing windows stay excluded."
+                     TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <InfoBar IsOpen="{x:Bind ViewModel.HasOptionsWarning, Mode=OneWay}" IsClosable="False"
+                   Severity="Warning" Message="{x:Bind ViewModel.OptionsWarning, Mode=OneWay}" />
+        </StackPanel>
         <Grid ColumnSpacing="8" RowSpacing="8">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -47,8 +61,17 @@
                   Command="{x:Bind ViewModel.GatherCommand}" />
           <Button x:Name="RestoreButton" Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
                   Style="{x:Bind RecoveryButtonStyle(ViewModel.HasRecovery), Mode=OneWay}"
-                  Content="Restore borrowed windows" Command="{x:Bind ViewModel.RestoreCommand}" />
+                  Content="Restore session" Command="{x:Bind ViewModel.RestoreCommand}" />
         </Grid>
+        <StackPanel Spacing="8">
+          <CheckBox x:Name="StartupOption" IsChecked="{x:Bind ViewModel.StartWithWindows, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.CanChangeStartup, Mode=OneWay}" Click="StartupClicked"
+                    Content="Start with Windows" />
+          <TextBlock Text="Start quietly in the notification area after you sign in. Windows Startup apps settings can override this option."
+                     TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+          <InfoBar IsOpen="{x:Bind ViewModel.HasStartupWarning, Mode=OneWay}" IsClosable="False"
+                   Severity="Warning" Message="{x:Bind ViewModel.StartupWarning, Mode=OneWay}" />
+        </StackPanel>
         <InfoBar x:Name="OperationStatus" IsOpen="True" IsClosable="False"
                  Severity="{x:Bind StatusSeverity(ViewModel.HasDetails), Mode=OneWay}"
                  Message="{x:Bind ViewModel.Summary, Mode=OneWay}" AutomationProperties.LiveSetting="Polite" />

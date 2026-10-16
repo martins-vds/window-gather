@@ -13,6 +13,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private ShortcutController? shortcuts;
     private MainViewModel? model;
     private OperationCoordinator? coordinator;
+    private NativeWindowTracker? tracker;
 #endif
 
     public App()
@@ -44,10 +45,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         Exit();
 #else
+        bool startInTray = LaunchOptions.StartInTray(Environment.GetCommandLineArgs().Skip(1));
+        bool initializing = true;
         mutex = new Mutex(true, @"Local\WindowGather.DesktopUtility", out bool first);
         if (!first)
         {
-            NativeMessage.Show("Window Gather is already running. Open it from the notification area.", "Window Gather");
+            if (!startInTray)
+                NativeMessage.Show("Window Gather is already running. Open it from the notification area.", "Window Gather");
             mutex.Dispose();
             mutex = null;
             Exit();
@@ -58,10 +62,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             var queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             var dispatcher = new UiDispatcher(queue);
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WindowGather");
+            var desktop = new NativeDesktop();
+            tracker = new NativeWindowTracker(desktop, dispatcher.InvokeAsync);
             var startup = await Task.Run(() =>
             {
-                var engine = new GatherEngine(new NativeDesktop(), new SessionStore(directory));
+                var engine = new GatherEngine(desktop, new SessionStore(directory),
+                    new NativePrimaryDisplay(desktop), desktop, tracker, new GatherPreferencesStore(directory));
                 var store = new ShortcutStore(directory);
+                var autostart = new StartupController(new WindowsStartupRegistration());
+                autostart.Refresh();
                 ShortcutSettings settings;
                 string warning = "";
                 try { settings = store.Load(); }
@@ -70,17 +79,20 @@ public partial class App : Microsoft.UI.Xaml.Application
                     settings = ShortcutSettings.Defaults;
                     warning = $"Cannot load saved shortcuts: {error.Message}\nUsing defaults until you save repaired settings.";
                 }
-                return (engine, store, settings, warning);
+                return (engine, store, settings, warning, autostart);
             });
             shell = new WindowsShell(dispatcher.InvokeAsync);
             identifier = new NativeDisplayIdentifier();
             shortcuts = new ShortcutController(shell, startup.store);
             coordinator = new OperationCoordinator(startup.engine);
-            model = new MainViewModel(coordinator, shortcuts, dispatcher, startup.warning);
+            model = new MainViewModel(coordinator, shortcuts, dispatcher, startup.warning, startup.autostart);
             model.UpdateShortcuts(shortcuts.Activate(startup.settings));
             window = new MainWindow(model, () => shortcuts.Settings);
             window.ExitRequested += ExitApplication;
-            model.AttentionRequested += window.ShowWindow;
+            model.AttentionRequested += () =>
+            {
+                if (!startInTray || !initializing) window.ShowWindow();
+            };
             model.IdentifyRequested += () =>
             {
                 try { identifier.ShowDisplays(model.Displays.ToArray()); }
@@ -106,6 +118,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             };
             shell.Problem += model.ReportProblem;
             shell.TopologyChanged += async () => await model.NotifyTopologyChangedAsync();
+            shell.PrimaryObservationRequested += () =>
+            {
+                try { coordinator.ObservePrimary(); }
+                catch (Exception error) { model.ReportProblem("Cannot observe primary-display ownership: " + error.Message); }
+            };
+            tracker.WindowOpened += async opened => await model.TrackWindowAsync(opened);
+            tracker.Problem += async problem => await model.TrackingProblemAsync(problem);
             coordinator.StateChanged += state =>
             {
                 if (!dispatcher.TryEnqueue(() =>
@@ -115,12 +134,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 }))
                     System.Diagnostics.Trace.TraceError("Tray update rejected during shutdown.");
             };
-            window.ShowWindow();
+            if (!startInTray) window.ShowWindow();
             await model.ExecuteAsync(OperationKind.Refresh);
             if (coordinator.State.HasRecovery)
-                model.Summary = $"Recovery available: {coordinator.State.BorrowedCount} borrowed windows. Click Restore to send them home.";
+                model.Summary = "Recovery available. Click Restore session to finish saved window and display recovery.";
             else if (!model.HasDetails) model.Summary = "Ready. Choose the display you want to work on.";
             await model.NotifyTopologyChangedAsync();
+            initializing = false;
         }
         catch (Exception error)
         {
@@ -137,6 +157,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         try { shortcuts?.Release(); }
         catch (Exception error) { NativeMessage.Show(error.Message, "Cannot release shortcuts"); return; }
         identifier?.Dispose();
+        tracker?.Dispose();
         shell?.Dispose();
         model?.Dispose();
         window?.ExitWindow();

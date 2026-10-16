@@ -11,8 +11,10 @@ public sealed record Placement(uint Flags, uint ShowCommand, Position Min, Posit
 
 public sealed record Display(string Id, string DeviceName, string Name, Box Bounds, Box WorkArea)
 {
+    public bool IsPrimary { get; init; }
     public override string ToString() =>
-        $"{DeviceName.Replace(@"\\.\", "")} - {Name} ({Bounds.Width} x {Bounds.Height})";
+        $"{DeviceName.Replace(@"\\.\", "")} - {Name} ({Bounds.Width} x {Bounds.Height})" +
+        (IsPrimary ? " - Primary" : "");
 }
 
 public sealed record SavedWindow(long Handle, int ProcessId, long ProcessStartedUtcTicks,

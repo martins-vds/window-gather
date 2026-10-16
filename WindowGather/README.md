@@ -25,7 +25,7 @@ to run the utility. Run the EXE directly, not with `dotnet`.
 2. Click your treadmill display in the preview to select it. The dropdown is
    kept as a keyboard-accessible alternative; both selections stay in sync.
 3. Click **Gather to selected display**.
-4. When finished, click **Restore borrowed windows**.
+4. When finished, click **Restore session** (**Restore borrowed windows** in older releases).
 
 All displays can remain connected and enabled. The destination does not need to
 be the primary display. The preview matches the extended desktop arrangement;
@@ -34,6 +34,53 @@ Identification labels use the same device names as the app's preview and
 dropdown; these are not necessarily the numbers shown in Windows Settings.
 Selecting a display does not move any windows until you click Gather. Selection
 is locked during a gather session, but Identify remains available.
+
+### Optional primary-display behavior (current source)
+
+These options are **not yet in the published v1.0.0 release**. Both default off
+and are saved separately in `%LOCALAPPDATA%\WindowGather\gather-options.json`.
+The preview/picker label the current primary display.
+
+- **Make the gathering destination the primary display** changes Windows' primary
+  monitor when gathering. Explicit Restore reverses that change before restoring
+  borrowed windows, provided the original monitor is available and you have not
+  overridden the primary yourself. A failure stops Gather before app-initiated
+  window movement; any primary recovery remains saved.
+- **New windows follow the primary display on Restore** is available with the
+  first option. It moves only confirmed eligible windows opened after Gather on
+  the destination that are still there when you explicitly Restore. They follow
+  the effective primary; borrowed windows still return to their saved origins.
+  Pre-existing destination residents and windows you moved elsewhere are excluded.
+
+Options are fixed for a session and locked until recovery is completed or
+forgotten. Buttons, tray and global shortcuts use the same saved options.
+New-window following is not continuous. If you manually change the primary,
+Restore respects that choice instead of switching it back; recorded windows follow
+that primary. This includes an away-and-back change observed while the app runs.
+Unsupported/cloned or ambiguous display arrangements are refused, not guessed.
+
+Primary changes can help apps that use the default monitor, but notification
+routing and application launch locations remain controlled by Windows/the apps.
+Some apps remember their own monitor. Shell notifications/tool windows are not
+eligible followers. Windows may reposition unrelated windows when primary changes;
+Window Gather does not explicitly enroll or move existing residents.
+
+Closing to the tray keeps tracking. Exit/restart interrupts observation: only
+durably recorded new windows can follow; no new membership is guessed on restart.
+If a switch/reversal or ownership history was interrupted, Restore can require you
+to select the intended primary in Windows display settings and retry rather than
+overwrite a possible manual change. Read the reported recovery details.
+If the original primary is unavailable, reconnect it and explicitly Restore;
+safe borrowed returns can still complete while primary/follower recovery stays pending.
+
+Disconnect automation continues returning **borrowed windows only**; it never
+changes primary settings or follows new windows. Reconnect does not trigger moves.
+**Forget recovery** abandons both window and primary recovery without changing
+Windows settings; the temporary primary can remain primary.
+An empty borrowed list can still have pending primary/follower work.
+Use the current WinUI frontend for these sessions. The updated legacy frontend
+refuses unsupported primary Restore; older released binaries cannot understand the
+new metadata and must not be used to Restore/Forget such a session.
 
 ### Shortcuts and tray
 
@@ -83,8 +130,9 @@ the saved minimized/maximized state. It does not replace the original return rec
 
 Only visible, non-cloaked top-level application windows on the current virtual
 desktop are considered. The shell, taskbars, tool/no-activate windows, and Window
-Gather itself are excluded. Visible owned dialogs may be included. New windows
-opened after gathering are not restored. Closed/replaced windows are skipped:
+Gather itself are excluded. Visible owned dialogs may be included. By default,
+new windows opened after gathering are not restored; the opt-in follow rule above
+is the only exception. Closed/replaced windows are skipped:
 per-window session markers plus process identity checks prevent matching a
 different window merely because its title or handle resembles the original.
 No window titles, browser URLs, or document contents are stored.
@@ -97,7 +145,7 @@ prevent that.
 
 Unavailable origins and failed returns remain saved, with a persistent warning.
 No substitute origin is chosen. Reconnecting monitors refreshes availability but
-does **not** automatically move pending windows: click **Restore borrowed windows**
+does **not** automatically move pending windows: click **Restore session**
 to retry. Automatic return waits for the layout to settle and never interrupts
 an operation already moving windows. It neither brings the app to the foreground
 nor moves destination-resident/new windows.
@@ -111,6 +159,37 @@ release version source; a larger historical local version is not a newer release
 
 **Forget recovery** requires confirmation. It leaves windows where they are and
 removes the return record. **Exit** does not forget recovery.
+
+## Start with Windows (current source)
+
+**Start with Windows** is off by default. Enable it in the main window to launch
+quietly in the notification area after you sign in. Hotkeys and tray commands
+remain available; use **Open** in the tray to show the window. A normal manual
+launch still opens the main window. Startup does not Gather or explicitly Restore
+anything, and a second startup launch exits quietly if the app is already running.
+The existing destination-disconnect policy is unchanged.
+
+The option registers only the current user, without elevation, using the
+`WindowGather` value in
+`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+It stores the quoted **outer executable** path with `--startup`, not an extracted
+single-file runtime path. There is no extra JSON preference that can drift from
+this registration. Disabling removes only this app's recognized entry, not other
+startup applications. Read/write/verification failures are visible and never
+reported as a successful save.
+
+Keep the executable in a permanent location before enabling this option.
+After moving or replacing its folder, run the new copy and enable the option
+again to update the path. An old recognized path produces a warning; unknown
+commands are not overwritten or deleted. A command longer than Windows'
+260-character Run limit must use a shorter path.
+
+Windows **Settings > Apps > Startup**, organizational policy, or security
+software can block/delay launch independently. This switch manages the Run entry;
+it does not override Windows' startup approval settings. If already disabled
+there, re-enable Window Gather in Windows as well. Deleting the portable folder
+does not unregister it: turn this option off first. This feature is not included
+in the existing immutable v1.0.0 release.
 
 ## Limitations
 
@@ -130,8 +209,9 @@ removes the return record. **Exit** does not forget recovery.
 - A minimized window's "maximize when next restored" behavior depends on the
   placement flags Windows exposes; ordinary minimized/maximized states are
   preserved, but unusual application-specific restore behavior is not guaranteed.
-- There is no startup registration, networking, telemetry, auto-update, display
-  disabling, or alteration of your Windows display settings.
+- There is no networking, telemetry, auto-update or display disabling.
+  Startup registration and primary-display changes are explicit, off-by-default
+  options in current source.
 
 ## Build and validate
 

@@ -67,6 +67,28 @@ seconds. Local verification simulated taskbar recreation; it did not kill
 Explorer. The legacy Ctrl+Alt+F12 default is preserved, with its documented
 Windows debugger reservation shown in settings.
 
+### Optional sign-in startup
+
+`StartupController` and `IStartupRegistration` are portable Application contracts;
+`WindowsStartupRegistration` is the Windows adapter. The latter manages only
+the current user's named `WindowGather` Run value. It quotes `Environment.ProcessPath`
+(the outer self-contained executable), appends the exact `--startup` argument,
+validates the documented 260-character command limit and rejects unrecognized
+entries instead of replacing unrelated commands. Reads never create/repair entries.
+The registry registration is authoritative; no separate startup JSON flag exists.
+It does not change Windows Startup apps approval/policy.
+
+The WinUI startup checkbox uses the shared operation gate and off-UI-thread work,
+then reflects verified registration state or visible errors. It is independent
+of recovery and remains editable during an idle saved session. `--startup` creates
+the normal window, shell and hotkey services without showing/activating the window;
+ordinary manual launches retain their visible startup behavior. Initial nonfatal
+warnings are retained without forcing foreground activation on quiet startup.
+Duplicate quiet launches do not show the existing-instance message. The startup
+flag neither starts a Gather nor explicitly restores recovery. Existing topology
+recovery rules remain unchanged. Adapter tests inject a fake Run entry; portable
+and real-XAML tests inject fake startup registration and never register test builds.
+
 ## Monitor-disconnect behavior
 
 The user selected automatic return of available borrowed windows when the
@@ -131,6 +153,45 @@ messages and owned disposable windows. Actual cable-disconnect and cross-monitor
 movement checks require a multi-monitor desktop.
 
 ## Toolchain and quality gates
+
+### Opt-in primary sessions (unreleased source)
+
+`GatherPreferences` defaults both temporary-primary and new-window following off.
+The shared coordinator snapshots preferences into recovery; the separate
+`gather-options.json` does not rewrite shortcuts. Windows adapters implement
+`IPrimaryDisplay`, `IWindowInspector` and `IWindowTracker`; portable layers retain
+no native dependencies. Primary status is an additive, non-positional display value.
+
+Optional schema-1 `Primary` metadata stores physical original identity, phase,
+ownership release, restore intent, pinned follower destination and recorded
+followers. With no metadata the previous JSON shape is unchanged. Primary-only
+and follower-only recovery can outlive the borrowed list. Updated legacy code
+must not clear extended recovery through an unsupported Restore.
+
+The app saves intent before native topology writes, rebases all active monitor
+positions together without changing relative arrangement/modes/scaling, verifies
+the resulting topology, and re-resolves destinations by physical identity. Native
+staging errors attempt only topology-guarded rollback and report unresolved state.
+Windows primary switching is not a filesystem transaction and can require manual
+repair; failed or ambiguous ownership never justifies overwriting a user's layout.
+Observed external primary changes release reversal ownership; missed observation
+or a utility restart makes an applied-but-unfinished change conservative/explicit.
+
+The observer uses CREATE/SHOW/DESTROY events and a hidden-inclusive baseline,
+not a Restore-time “all windows now” scan. Only post-arm eligible new lifecycles
+on the destination are recorded. Unknown history, handle reuse and pre-existing
+hidden windows do not establish new-window membership. Hooks remain lifetime-owned
+on the message-pump thread; enrollment/storage is serialized with operations.
+Confirmed membership and movement intent are saved before following. Restore
+rechecks identity and location; moved-away/closed windows are skipped. Repeated
+Restore processes only unresolved work. Tracking errors are visible and stop
+further enrollment. No enrollment resumes by guessing across an app restart.
+
+Primary reversal and followers run only on explicit Restore, not automatic
+disconnect return. Forget clears their recovery without changing Windows settings.
+The default borrowed-only save-before-move/persist-before-unmark order remains.
+Fake-native adapter tests run in normal verification; actual primary writes are
+separate OS-setting changes requiring explicit permission and multi-monitor hardware.
 
 `global.json` pins SDK 10.0.401, and `Directory.Build.props` selects stable
 C# 14 explicitly. Windows App SDK is 2.5.1; CommunityToolkit.Mvvm is 8.4.2.

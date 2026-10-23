@@ -1,6 +1,77 @@
 using WindowGather;
 
 int passed = 0;
+Run("deferred registry visibility can apply only the complete verified layout", () =>
+{
+    var api = new FakeApi { DeferRegistry = true };
+    new PrimaryDisplayTransaction(api).SetPrimary("physical-b");
+    Check(api.State.Outputs[1].Primary && api.State.Outputs[0].Active.X == -1920);
+    Check(api.State.Outputs.All(output => output.Active.SameState(output.Registry)));
+    Check(api.Calls.Count(call => call.Device is null) == 1);
+});
+Run("successful but ignored staging cannot be reported as a successful primary change", () =>
+{
+    var api = new FakeApi { IgnoreStage = true };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.State.Outputs[0].Primary && api.State.Outputs[1].Active.X == 1920);
+    Check(api.Calls.Count(call => call.Device is null) == 2);
+});
+Run("failed apply with deferred registry visibility restores the original layout", () =>
+{
+    var api = new FakeApi { DeferRegistry = true, FailApply = true };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.State.Outputs[0].Primary && api.State.Outputs[1].Active.X == 1920);
+    Check(api.State.Outputs.All(output => output.Active.SameState(output.Registry)));
+    Check(api.Calls.Count(call => call.Device is null) == 2);
+});
+Run("failed deferred staging replaces pending requests without applying them", () =>
+{
+    var api = new FakeApi { DeferRegistry = true, FailStage = 2 };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.All(call => call.Device is not null));
+    Check(api.Change(null, null, 0) == 0);
+    Check(api.State.Outputs[0].Primary && api.State.Outputs[1].Active.X == 1920);
+});
+Run("external registry edits still block apply with deferred staging", () =>
+{
+    var api = new FakeApi { DeferRegistry = true };
+    api.OnCapture = current =>
+    {
+        if (current.Calls.Count != 4) return;
+        current.State = current.State with { Outputs = current.State.Outputs.Select(output =>
+            output.Id == "physical-a" ? output with { Registry = output.Registry.At(35, 0) } : output).ToArray() };
+    };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.All(call => call.Device is not null));
+    Check(api.State.Outputs[0].Registry.X == 35);
+});
+Run("display transaction errors expose the original staging or apply failure and recovery outcome", () =>
+{
+    foreach (bool staging in new[] { true, false })
+    {
+        var api = staging ? new FakeApi { FailStage = 2 } : new FakeApi { FailApply = true };
+        InvalidOperationException? failure = null;
+        try { new PrimaryDisplayTransaction(api).SetPrimary("physical-b"); }
+        catch (InvalidOperationException error) { failure = error; }
+        Check(failure is not null && failure.InnerException is not null);
+        Check(failure!.Message.Contains(failure.InnerException!.Message, StringComparison.Ordinal));
+        Check(failure.Message.Contains(staging ? "staging" : "apply", StringComparison.Ordinal));
+        Check(failure.Message.Contains("DISP_CHANGE -1", StringComparison.Ordinal));
+        Check(failure.Message.Contains("The original display settings were restored.", StringComparison.Ordinal));
+    }
+});
+Run("display transaction errors preserve the original cause when rollback is blocked", () =>
+{
+    var api = new FakeApi { FailApply = true, HotplugAtApply = true };
+    InvalidOperationException? failure = null;
+    try { new PrimaryDisplayTransaction(api).SetPrimary("physical-b"); }
+    catch (InvalidOperationException error) { failure = error; }
+    Check(failure is not null && failure.InnerException is not null);
+    Check(failure!.Message.Contains(failure.InnerException!.Message, StringComparison.Ordinal));
+    Check(failure.Message.Contains("Automatic rollback was stopped", StringComparison.Ordinal));
+    Check(!failure.Message.Contains("The original display settings were restored.", StringComparison.Ordinal));
+    Check(api.Calls.Count(call => call.Device is null) == 1);
+});
 Run("preflight never tests a displaced current primary as an independent layout", () =>
 {
     var api = new FakeApi();
@@ -239,10 +310,11 @@ internal sealed class FakeApi : IPrimaryDisplayApi
         new("physical-b", "DISPLAY2", false, 150, Mode(1920, 200), Mode(1920, 200))
     ], ["path-a", "path-b"], []);
     internal readonly List<(string? Device, DisplayMode? Mode, uint Flags)> Calls = [];
-    internal bool FailTest, FailApply, HotplugAtApply;
+    internal bool FailTest, FailApply, HotplugAtApply, DeferRegistry, IgnoreStage;
     internal int FailStage, TestResult;
     internal Action<FakeApi>? OnCapture;
     private int stages;
+    private readonly Dictionary<string, DisplayMode> deferred = new(StringComparer.OrdinalIgnoreCase);
     public PrimarySnapshot Capture()
     {
         OnCapture?.Invoke(this);
@@ -261,15 +333,24 @@ internal sealed class FakeApi : IPrimaryDisplayApi
         {
             State = State with { Outputs = State.Outputs.Select(output => output with
             {
-                Active = output.Registry,
-                Primary = output.Registry.X == 0 && output.Registry.Y == 0
+                Active = deferred.GetValueOrDefault(output.Device, output.Registry),
+                Registry = deferred.GetValueOrDefault(output.Device, output.Registry),
+                Primary = deferred.GetValueOrDefault(output.Device, output.Registry).X == 0 &&
+                    deferred.GetValueOrDefault(output.Device, output.Registry).Y == 0
             }).ToArray() };
+            deferred.Clear();
             if (HotplugAtApply) State = State with { Paths = ["changed"] };
             if (FailApply) { FailApply = false; return -1; }
             return 0;
         }
-        State = State with { Outputs = State.Outputs.Select(output =>
-            output.Device == device ? output with { Registry = output.Registry.At(mode!.X, mode.Y) } : output).ToArray() };
+        if (!IgnoreStage)
+        {
+            if (DeferRegistry)
+                deferred[device] = State.Outputs.Single(output => output.Device == device).Registry.At(mode!.X, mode.Y);
+            else
+                State = State with { Outputs = State.Outputs.Select(output =>
+                    output.Device == device ? output with { Registry = output.Registry.At(mode!.X, mode.Y) } : output).ToArray() };
+        }
         return ++stages == FailStage ? -1 : 0;
     }
     internal static DisplayMode Mode(int x, int y)

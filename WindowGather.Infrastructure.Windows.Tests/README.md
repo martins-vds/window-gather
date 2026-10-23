@@ -33,10 +33,28 @@ multi-monitor transaction. Preflight tests the new primary at the origin and
 other displays at their current positions; testing the old primary at its future
 nonzero position independently produces `DISP_CHANGE_FAILED` on the reported
 machine. Full-mode requests fail the same way. The translated layout is still
-staged with `CDS_UPDATEREGISTRY | CDS_NORESET`, checked in full before global
-apply, and verified afterward with guarded rollback on failure. Preflight does
+staged with `CDS_UPDATEREGISTRY | CDS_NORESET`, guarded before global apply,
+and verified in full afterward with guarded rollback on failure. Preflight does
 not prove that the driver will accept the combined transaction. Driver preflight
 errors remain fatal before staging; no failure code is ignored or bypassed.
+Transaction errors include the original failure message as well as the rollback
+outcome, because the operation UI displays `Exception.Message`, not the inner
+exception. A successful rollback is not evidence of which transaction step failed.
+Regression checks cover staging/apply failures and rollback blocked by hotplug.
+
+On the reported system, successful staging calls leave `ENUM_REGISTRY_SETTINGS`
+showing original positions until the global apply. Before applying, every output
+must still match its original or requested app-owned state, with unchanged active
+geometry, identities, scale and paths. Requiring all requested registry positions
+to be visible before apply incorrectly rejected this driver. After apply, all
+requested active and registry positions and the primary must match exactly;
+successful-but-ignored writes are failures, not success. Compensation likewise
+allows original/requested registry visibility until its final verification.
+Tests cover deferred visibility, failed staging that must cancel pending writes,
+failed apply compensation, ignored writes and external registry edits.
+Separate authorized native diagnostics confirmed two switch-and-restore cycles
+on the reported four-output setup; the original primary and geometry were verified
+after each cycle. These are not part of the routine automated test suite.
 
 Registry staging is required by Windows for multi-monitor changes. A failed transaction restores only
 known app-owned positions and never applies an original topology after a hotplug, mode/scale change,

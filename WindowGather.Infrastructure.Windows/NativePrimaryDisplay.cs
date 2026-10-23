@@ -89,7 +89,9 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
             PrimarySnapshot ready = api.Capture();
             RequireSame(before, ready, before.Outputs.ToDictionary(output => output.Device,
                 output => output.Active, StringComparer.OrdinalIgnoreCase), oldPrimary.Id, registry: false);
-            RequirePlannedRegistry(before, ready, planned);
+            // Some drivers expose staged registry positions only after the global apply.
+            // Until then accept only the original or requested state; verify the full result afterward.
+            RequireRegistry(before, ready, planned, staged);
             applied = true;
             Success(api.Change(null, null, 0), "apply");
             RequireSame(before, api.Capture(), planned, id, registry: true);
@@ -107,7 +109,7 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
                 recovery = "Automatic rollback was stopped to avoid overwriting changed display settings. " +
                     "Check Windows Display settings. " + rollbackFailure.Message;
             }
-            throw new InvalidOperationException($"Cannot change the primary display. {recovery}", failure);
+            throw new InvalidOperationException($"Cannot change the primary display. {failure.Message} {recovery}", failure);
         }
     }
 
@@ -138,7 +140,6 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
             RequireRegistry(before, latest, planned, staged);
             Success(api.Change(output.Device, output.Registry.PositionOnly(),
                 UpdateRegistry | NoReset | (output.Id == originalPrimary ? SetPrimaryFlag : 0)), "rollback staging");
-            staged.Remove(output.Device);
         }
         if (applied)
         {
@@ -146,7 +147,7 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
             if (!Matches(before, latest, original, originalPrimary, false) &&
                 !Matches(before, latest, planned, requestedPrimary, false))
                 throw new InvalidOperationException("The active physical topology changed before rollback apply.");
-            RequirePlannedRegistry(before, latest, original);
+            RequireRegistry(before, latest, planned, staged);
             Success(api.Change(null, null, 0), "rollback apply");
         }
         RequireSame(before, api.Capture(), original, originalPrimary, true);
@@ -189,14 +190,6 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
         before.Outputs.All(output => now.Outputs.Count(item => item.Id == output.Id &&
             string.Equals(item.Device, output.Device, StringComparison.OrdinalIgnoreCase) &&
             item.Scale == output.Scale) == 1);
-
-    private static void RequirePlannedRegistry(PrimarySnapshot before, PrimarySnapshot now,
-        Dictionary<string, DisplayMode> planned)
-    {
-        if (!SameDevices(before, now) || now.Outputs.Any(output =>
-            !output.Registry.SameState(planned[output.Device])))
-            throw new InvalidOperationException("Windows did not persist the complete requested display layout.");
-    }
 
     private static bool Matches(PrimarySnapshot before, PrimarySnapshot now,
         Dictionary<string, DisplayMode> modes, string primary, bool registry) =>

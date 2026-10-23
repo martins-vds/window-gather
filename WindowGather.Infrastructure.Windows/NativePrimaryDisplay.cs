@@ -240,7 +240,16 @@ internal sealed class DisplayMode
     }
     internal bool SameState(DisplayMode other)
     {
+        const uint logPixels = 0x20000; // DM_LOGPIXELS
+        if ((Fields & logPixels) != (other.Fields & logPixels)) return false;
         byte[] left = Bytes, right = other.Bytes;
+        // Some drivers return current DPI here but zero for registry modes without declaring it valid.
+        // Effective monitor scaling is checked separately; never compare an invalid dmLogPixels value.
+        if ((Fields & logPixels) == 0)
+        {
+            Array.Clear(left, 166, 2);
+            Array.Clear(right, 166, 2);
+        }
         // dmFields describes validity/requested updates, not the resulting display state.
         Array.Clear(left, 72, 4);
         Array.Clear(right, 72, 4);

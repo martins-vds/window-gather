@@ -19,6 +19,14 @@ registry settings, and restart requests. Consequently some otherwise normal disc
 are deliberately unavailable rather than risking re-enabling a persisted output.
 Only `DM_POSITION` is requested; complete original DEVMODEW blobs, including driver extras, are retained.
 Effective monitor scale and DisplayConfig rotation/scaling/refresh paths are checked before/after changes.
+Mode comparison ignores `dmLogPixels` only when neither snapshot declares
+`DM_LOGPIXELS` valid. On the reported machine, all four active outputs returned
+144 there while persisted outputs returned zero, with the flag absent in both;
+those invalid bytes are not evidence of a pending display change. Valid values
+and validity mismatches still block changes, and the original bytes are preserved
+in native requests. Geometry, mode, opaque driver bytes and concurrent-change/
+rollback safeguards remain unchanged. Regression checks exercise both successful
+staging and failed-apply rollback without changing real display settings.
 
 Registry staging is required by Windows for multi-monitor changes. A failed transaction restores only
 known app-owned positions and never applies an original topology after a hotplug, mode/scale change,

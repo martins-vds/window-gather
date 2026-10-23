@@ -58,6 +58,78 @@ Run("pending persisted mode is never consumed", () =>
     Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
     Check(api.Calls.Count == 0);
 });
+Run("invalid dmLogPixels does not masquerade as a pending display setting", () =>
+{
+    var api = new FakeApi();
+    api.State = api.State with { Outputs = api.State.Outputs.Select(output =>
+    {
+        byte[] active = output.Active.Bytes;
+        BitConverter.GetBytes((ushort)144).CopyTo(active, 166);
+        return output with { Active = new DisplayMode(active) };
+    }).ToArray() };
+    new PrimaryDisplayTransaction(api).SetPrimary("physical-b");
+    Check(api.State.Outputs[1].Primary && api.Calls.Count(call => call.Device is null) == 1);
+});
+Run("valid dmLogPixels differences remain pending and block every display write", () =>
+{
+    var api = new FakeApi();
+    api.State = api.State with { Outputs = api.State.Outputs.Select(output =>
+    {
+        byte[] active = output.Active.Bytes, registry = output.Registry.Bytes;
+        BitConverter.GetBytes(output.Active.Fields | 0x20000u).CopyTo(active, 72);
+        BitConverter.GetBytes(output.Registry.Fields | 0x20000u).CopyTo(registry, 72);
+        BitConverter.GetBytes((ushort)144).CopyTo(active, 166);
+        BitConverter.GetBytes((ushort)96).CopyTo(registry, 166);
+        return output with { Active = new DisplayMode(active), Registry = new DisplayMode(registry) };
+    }).ToArray() };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.Count == 0);
+});
+Run("dmLogPixels validity mismatch cannot bypass pending settings checks", () =>
+{
+    var api = new FakeApi();
+    byte[] registry = api.State.Outputs[0].Registry.Bytes;
+    BitConverter.GetBytes(api.State.Outputs[0].Registry.Fields | 0x20000u).CopyTo(registry, 72);
+    api.State = api.State with { Outputs = api.State.Outputs.Select((output, index) =>
+        index == 0 ? output with { Registry = new DisplayMode(registry) } : output).ToArray() };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.Count == 0);
+});
+Run("invalid dmLogPixels is ignored only for comparison and survives position requests", () =>
+{
+    byte[] bytes = FakeApi.Mode(0, 0).Bytes;
+    BitConverter.GetBytes((ushort)144).CopyTo(bytes, 166);
+    var mode = new DisplayMode(bytes);
+    Check(mode.SameState(FakeApi.Mode(0, 0)) && FakeApi.Mode(0, 0).SameState(mode));
+    Check(BitConverter.ToUInt16(mode.Bytes, 166) == 144);
+    Check(BitConverter.ToUInt16(mode.At(20, 30).PositionOnly().Bytes, 166) == 144);
+});
+Run("real mode and opaque driver differences still block pending display writes", () =>
+{
+    foreach (int offset in new[] { 76, 80, 84, 88, 168, 172, 176, 180, 184, 212, 216, 220 })
+    {
+        var api = new FakeApi();
+        byte[] registry = api.State.Outputs[0].Registry.Bytes;
+        registry[offset] ^= 1;
+        api.State = api.State with { Outputs = api.State.Outputs.Select((output, index) =>
+            index == 0 ? output with { Registry = new DisplayMode(registry) } : output).ToArray() };
+        Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+        Check(api.Calls.Count == 0);
+    }
+});
+Run("invalid dmLogPixels mismatch does not prevent guarded rollback after failed apply", () =>
+{
+    var api = new FakeApi { FailApply = true };
+    api.State = api.State with { Outputs = api.State.Outputs.Select(output =>
+    {
+        byte[] active = output.Active.Bytes;
+        BitConverter.GetBytes((ushort)144).CopyTo(active, 166);
+        return output with { Active = new DisplayMode(active) };
+    }).ToArray() };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.Count(call => call.Device is null) == 2);
+    Check(api.State.Outputs[0].Primary && api.State.Outputs[1].Active.X == 1920);
+});
 Run("registry edits between stages are not overwritten", () =>
 {
     var api = new FakeApi();

@@ -1,6 +1,51 @@
 using WindowGather;
 
 int passed = 0;
+Run("preflight never tests a displaced current primary as an independent layout", () =>
+{
+    var api = new FakeApi();
+    new PrimaryDisplayTransaction(api).SetPrimary("physical-b");
+    var tests = api.Calls.Where(call => (call.Flags & PrimaryDisplayTransaction.Test) != 0).ToArray();
+    Check(tests.Length == 2);
+    var oldPrimary = tests.Single(call => call.Device == "DISPLAY1");
+    Check(oldPrimary.Mode!.X == 0 && oldPrimary.Mode.Y == 0);
+    Check((oldPrimary.Flags & PrimaryDisplayTransaction.SetPrimaryFlag) == 0);
+    var newPrimary = tests.Single(call => call.Device == "DISPLAY2");
+    Check(newPrimary.Mode!.X == 0 && newPrimary.Mode.Y == 0);
+    Check((newPrimary.Flags & PrimaryDisplayTransaction.SetPrimaryFlag) != 0);
+    Check(api.State.Outputs[0].Active.X == -1920 && api.State.Outputs[1].Primary);
+});
+Run("driver preflight failure is not ignored or retried with writes", () =>
+{
+    var api = new FakeApi { TestResult = -1 };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.Count == 1 && api.Calls[0].Flags == (PrimaryDisplayTransaction.Test | PrimaryDisplayTransaction.SetPrimaryFlag));
+    Check(api.State.Outputs.All(output => output.Active.SameState(output.Registry)));
+});
+Run("secondary modes are preflighted in the live layout and translated only during staging", () =>
+{
+    var api = new FakeApi();
+    api.State = api.State with
+    {
+        Outputs = [.. api.State.Outputs, new PrimaryOutput("physical-c", "DISPLAY3", false, 100,
+            FakeApi.Mode(3840, 200), FakeApi.Mode(3840, 200))],
+        Paths = ["path-a", "path-b", "path-c"]
+    };
+    new PrimaryDisplayTransaction(api).SetPrimary("physical-b");
+    var test = api.Calls.Single(call => call.Device == "DISPLAY3" && (call.Flags & PrimaryDisplayTransaction.Test) != 0);
+    Check(test.Mode!.X == 3840 && test.Mode.Y == 200);
+    Check(api.State.Outputs[2].Active.X == 1920 && api.State.Outputs[2].Active.Y == 0);
+});
+Run("topology changes after preflight block every staging write", () =>
+{
+    var api = new FakeApi();
+    api.OnCapture = current =>
+    {
+        if (current.Calls.Count == 2) current.State = current.State with { Paths = ["changed"] };
+    };
+    Throws(() => new PrimaryDisplayTransaction(api).SetPrimary("physical-b"));
+    Check(api.Calls.Count == 2 && api.Calls.All(call => (call.Flags & PrimaryDisplayTransaction.Test) != 0));
+});
 Run("rebase preserves modes, scaling and relative offsets", () =>
 {
     var api = new FakeApi();
@@ -195,7 +240,7 @@ internal sealed class FakeApi : IPrimaryDisplayApi
     ], ["path-a", "path-b"], []);
     internal readonly List<(string? Device, DisplayMode? Mode, uint Flags)> Calls = [];
     internal bool FailTest, FailApply, HotplugAtApply;
-    internal int FailStage;
+    internal int FailStage, TestResult;
     internal Action<FakeApi>? OnCapture;
     private int stages;
     public PrimarySnapshot Capture()
@@ -206,7 +251,12 @@ internal sealed class FakeApi : IPrimaryDisplayApi
     public int Change(string? device, DisplayMode? mode, uint flags)
     {
         Calls.Add((device, mode, flags));
-        if ((flags & PrimaryDisplayTransaction.Test) != 0) return FailTest ? 1 : 0;
+        if ((flags & PrimaryDisplayTransaction.Test) != 0)
+        {
+            if (State.Outputs.Any(output => output.Device == device && output.Primary) &&
+                (mode!.X != 0 || mode.Y != 0)) return -1;
+            return FailTest ? 1 : TestResult;
+        }
         if (device is null)
         {
             State = State with { Outputs = State.Outputs.Select(output => output with

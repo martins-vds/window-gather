@@ -61,7 +61,11 @@ internal sealed class PrimaryDisplayTransaction(IPrimaryDisplayApi api)
                 checked(output.Active.Y - target.Active.Y)), StringComparer.OrdinalIgnoreCase);
         PrimaryOutput[] order = before.Outputs.OrderByDescending(output => output.Id == id).ToArray();
         foreach (PrimaryOutput output in order)
-            Success(api.Change(output.Device, planned[output.Device].PositionOnly(),
+            // CDS_TEST sees the live layout, not the future staged layout. In particular,
+            // Windows rejects testing the current primary away from the origin on its own.
+            // Test the candidate at the origin and other modes at their current positions.
+            Success(api.Change(output.Device,
+                (output.Id == id ? planned[output.Device] : output.Active).PositionOnly(),
                 Test | (output.Id == id ? SetPrimaryFlag : 0)), "preflight");
 
         RequireSame(before, api.Capture(), before.Outputs.ToDictionary(output => output.Device,

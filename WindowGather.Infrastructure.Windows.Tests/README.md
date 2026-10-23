@@ -28,6 +28,16 @@ in native requests. Geometry, mode, opaque driver bytes and concurrent-change/
 rollback safeguards remain unchanged. Regression checks exercise both successful
 staging and failed-apply rollback without changing real display settings.
 
+`CDS_TEST` validates each request against the live layout, not a complete future
+multi-monitor transaction. Preflight tests the new primary at the origin and
+other displays at their current positions; testing the old primary at its future
+nonzero position independently produces `DISP_CHANGE_FAILED` on the reported
+machine. Full-mode requests fail the same way. The translated layout is still
+staged with `CDS_UPDATEREGISTRY | CDS_NORESET`, checked in full before global
+apply, and verified afterward with guarded rollback on failure. Preflight does
+not prove that the driver will accept the combined transaction. Driver preflight
+errors remain fatal before staging; no failure code is ignored or bypassed.
+
 Registry staging is required by Windows for multi-monitor changes. A failed transaction restores only
 known app-owned positions and never applies an original topology after a hotplug, mode/scale change,
 identity change, or unrelated registry edit. Such races produce an explicit error directing the user

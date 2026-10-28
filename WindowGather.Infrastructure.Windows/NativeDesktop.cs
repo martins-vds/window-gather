@@ -158,11 +158,12 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
         using var dpi = new DpiScope();
         Box normal = Geometry.FitNormal(window.Placement, window.Origin, target);
         PrepareDisplay(window, target, normal);
-        Apply(window, window.Placement with
+        Placement placement = window.Placement with
         {
             Normal = normal, Min = new Position(-1, -1), Max = new Position(-1, -1)
-        });
-        WaitFor(window, target.Id, window.Placement with { Normal = normal }, exactRectangle: false);
+        };
+        Apply(window, placement);
+        WaitFor(window, target, placement, exactRectangle: false);
     }
 
     public void Restore(SavedWindow window)
@@ -175,11 +176,12 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
             throw new InvalidOperationException("The origin display changed during restoration. Recovery was kept; retry after the layout settles.");
         PrepareDisplay(window, window.Origin, window.Placement.Normal);
         Apply(window, window.Placement);
-        WaitFor(window, window.Origin.Id, window.Placement, exactRectangle: true);
+        WaitFor(window, window.Origin, window.Placement, exactRectangle: true);
     }
 
-    private static void PrepareDisplay(SavedWindow window, Display display, Box normal)
+    private void PrepareDisplay(SavedWindow window, Display display, Box normal)
     {
+        RequirePlacementTarget(window, display);
         nint handle = new(window.Handle);
         if (Native.IsIconic(handle)) return;
         // Move the visible frame first: maximized windows and DPI-changing apps need this
@@ -193,12 +195,22 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
         if (!Native.SetWindowPos(handle, 0, x, y, width, height, 0x4014))
             throw LastError("Cannot move the window frame to the selected display");
         var watch = Stopwatch.StartNew();
+        int reapplied = 0;
         while (ReadDisplay(Native.MonitorFromWindow(handle, DefaultNearest)).Id != display.Id)
         {
             if (watch.ElapsedMilliseconds >= 1200)
-                throw new InvalidOperationException("The window frame did not move. Recovery was kept.");
+                throw new InvalidOperationException(
+                    $"The window frame did not move to {display.DeviceName}. Recovery was kept.");
+            if (reapplied < 2 && watch.ElapsedMilliseconds >= 250 * (reapplied + 1))
+            {
+                RequirePlacementTarget(window, display);
+                if (!Native.SetWindowPos(handle, 0, x, y, width, height, 0x4014))
+                    throw LastError("Cannot move the window frame to the selected display");
+                reapplied++;
+            }
             Thread.Sleep(25);
         }
+        RequirePlacementTarget(window, display);
     }
 
     private static void Apply(SavedWindow window, Placement placement)
@@ -216,7 +228,7 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
             throw LastError("Windows rejected the move. Try running as administrator for elevated apps");
     }
 
-    private static void WaitFor(SavedWindow window, string displayId, Placement placement, bool exactRectangle)
+    internal void WaitFor(SavedWindow window, Display target, Placement placement, bool exactRectangle)
     {
         var watch = Stopwatch.StartNew();
         Placement? lastPlacement = null;
@@ -225,18 +237,24 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
         do
         {
             nint handle = new(window.Handle);
-            if (!Native.IsWindow(handle)) throw new InvalidOperationException("The window closed while moving.");
+            if (!MatchesIdentity(window)) throw new InvalidOperationException("The window closed or changed identity while moving.");
             Placement actual = ReadPlacement(handle);
             Display display = ReadDisplay(Native.MonitorFromWindow(handle, DefaultNearest));
             lastPlacement = actual;
             lastDisplay = display;
-            if (display.Id == displayId &&
+            if (display.Id == target.Id &&
                 Geometry.State(actual.ShowCommand) == Geometry.State(placement.ShowCommand) &&
-                (!exactRectangle || actual.Normal == placement.Normal)) return;
-            // WM_DPICHANGED can revise geometry after the first asynchronous placement.
-            if (exactRectangle && display.Id == displayId && reapplied < 2 &&
+                (actual.Flags & RestoreToMaximized) == (placement.Flags & RestoreToMaximized) &&
+                (!exactRectangle || actual.Normal == placement.Normal))
+            {
+                RequirePlacementTarget(window, target);
+                return;
+            }
+            // Apps can revise even the monitor after an asynchronous placement/DPI change.
+            if (reapplied < 2 &&
                 watch.ElapsedMilliseconds >= 250 * (reapplied + 1))
             {
+                RequirePlacementTarget(window, target);
                 Apply(window, placement);
                 reapplied++;
             }
@@ -245,8 +263,17 @@ public sealed class NativeDesktop : IDesktop, IWindowInspector
         throw new InvalidOperationException(
             "The application did not accept the requested placement. Its recovery entry was kept. " +
             $"Current display: {lastDisplay?.DeviceName}; state: {lastPlacement?.ShowCommand}; " +
-            $"normal rectangle: {lastPlacement?.Normal}. Expected state: {placement.ShowCommand}; " +
+            $"normal rectangle: {lastPlacement?.Normal}. Expected display: {target.DeviceName}; state: {placement.ShowCommand}; " +
             $"rectangle: {placement.Normal}.");
+    }
+
+    private void RequirePlacementTarget(SavedWindow window, Display target)
+    {
+        if (!MatchesIdentity(window))
+            throw new InvalidOperationException("The original window has closed or changed identity.");
+        if (!GetDisplays().Any(display => display.Id == target.Id &&
+            display.Bounds == target.Bounds && display.WorkArea == target.WorkArea))
+            throw new InvalidOperationException("The destination display changed while moving. Recovery was kept; retry after the layout settles.");
     }
 
     private static bool Eligible(nint handle)

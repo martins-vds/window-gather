@@ -16,6 +16,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--placement-native"))
+            {
+                TestMinimizedPlacement();
+                Console.WriteLine($"\n{passed} owned-window placement tests passed.");
+                return 0;
+            }
             Test("only imported windows are moved and restored", () =>
             {
                 var (desktop, store, engine) = Setup();
@@ -471,11 +477,199 @@ internal static class Program
         }
     }
 
+    private static void TestMinimizedPlacement()
+    {
+        var native = new NativeDesktop();
+        var displays = native.GetDisplays();
+        if (displays.Count < 2)
+            throw new InvalidOperationException("Owned-window placement regression requires two displays.");
+        foreach (var shape in new[] { (Left: 0, Top: 0, Width: 1920, Height: 1032),
+            (Left: 48, Top: 0, Width: 1872, Height: 1032),
+            (Left: 167, Top: 96, Width: 1752, Height: 936) })
+        Test($"a minimized translated placement is corrected exactly ({shape})", () =>
+        {
+            Display source = displays[0], destination = displays[1];
+            using var owned = new DeferringPlacementForm
+            {
+                Text = "Window Gather isolated test: rebased minimized placement",
+                StartPosition = FormStartPosition.Manual,
+                Location = new(source.WorkArea.Left + 80, source.WorkArea.Top + 80),
+                Size = new(420, 280), ShowInTaskbar = false
+            };
+            owned.Show();
+            owned.WindowState = FormWindowState.Maximized;
+            owned.WindowState = FormWindowState.Minimized;
+            Application.DoEvents();
+            SavedWindow before = native.CaptureWindow(owned.Handle);
+            Box requested = new(destination.Bounds.Left + shape.Left, destination.Bounds.Top + shape.Top,
+                destination.Bounds.Left + shape.Left + shape.Width,
+                destination.Bounds.Top + shape.Top + shape.Height);
+            Box rebased = new(source.Bounds.Left + shape.Left, source.Bounds.Top + shape.Top,
+                source.Bounds.Left + shape.Left + requested.Width, source.Bounds.Top + shape.Top + requested.Height);
+            var initial = new Native.WindowPlacement
+            {
+                Length = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.WindowPlacement>(),
+                Flags = 2, ShowCommand = 7, Min = new(-1, -1), Max = new(-1, -1),
+                Normal = Native.Rect.From(rebased)
+            };
+            nint previousDpi = Native.SetThreadDpiAwarenessContext(-4);
+            Check(previousDpi != 0);
+            try { Check(Native.SetWindowPlacement(owned.Handle, ref initial)); }
+            finally { Native.SetThreadDpiAwarenessContext(previousDpi); }
+            SavedWindow displaced = native.CaptureWindow(owned.Handle);
+            Check(displaced.Origin.Id != destination.Id && displaced.Placement.Normal == rebased,
+                $"The regression must begin with the reported translated rectangle on the wrong physical monitor: {displaced.Origin.DeviceName}; {displaced.Placement}; expected {rebased}.");
+            SavedWindow returning = before with
+            {
+                Origin = destination,
+                Placement = before.Placement with { Normal = requested, Min = new(-1, -1), Max = new(-1, -1) }
+            };
+            Pump(() =>
+            {
+                nint dpi = Native.SetThreadDpiAwarenessContext(-4);
+                Check(dpi != 0);
+                try { native.WaitFor(returning, destination, returning.Placement, exactRectangle: true); return true; }
+                finally { Native.SetThreadDpiAwarenessContext(dpi); }
+            });
+            SavedWindow after = native.CaptureWindow(owned.Handle);
+            Check(after.Origin.Id == destination.Id && after.Placement.Normal == requested &&
+                Geometry.State(after.Placement.ShowCommand) == 2 && (after.Placement.Flags & 2) == 2);
+            owned.WindowState = FormWindowState.Normal;
+            Application.DoEvents();
+            Check(native.CaptureWindow(owned.Handle).Origin.Id == destination.Id);
+        });
+        Test("a transiently refused frame move is retried without losing placement verification", () =>
+        {
+            Display source = displays[0], destination = displays[1];
+            using var owned = new DeferringPlacementForm
+            {
+                Text = "Window Gather isolated test: deferred placement",
+                StartPosition = FormStartPosition.Manual,
+                Location = new(source.WorkArea.Left + 80, source.WorkArea.Top + 80),
+                Size = new(420, 280), ShowInTaskbar = false
+            };
+            owned.Show();
+            owned.WindowState = FormWindowState.Maximized;
+            Application.DoEvents();
+            SavedWindow before = native.CaptureWindow(owned.Handle);
+            owned.RefusalsRemaining = 1;
+            Pump(() => { native.Gather(before, destination); return true; });
+            Check(owned.Refused == 1, "The regression must actually reject the first frame request.");
+            SavedWindow after = native.CaptureWindow(owned.Handle);
+            Check(after.Origin.Id == destination.Id && Geometry.State(after.Placement.ShowCommand) == 3);
+        });
+        Test("persistent frame refusal stays bounded and retains borrowed recovery", () =>
+        {
+            Display source = displays[0], destination = displays[1];
+            using var owned = new DeferringPlacementForm
+            {
+                Text = "Window Gather isolated test: persistent placement refusal",
+                StartPosition = FormStartPosition.Manual,
+                Location = new(source.WorkArea.Left + 80, source.WorkArea.Top + 80),
+                Size = new(420, 280), ShowInTaskbar = false
+            };
+            owned.Show();
+            Application.DoEvents();
+            SavedWindow before = native.CaptureWindow(owned.Handle);
+            var store = new MemoryStore();
+            var engine = new GatherEngine(new OwnedDesktop(native, [owned.Handle]), store);
+            owned.RefusalsRemaining = 100;
+            OperationResult result = Pump(() => engine.Gather(destination));
+            Check(result.Completed == 0 && result.Problems.Count == 1 && owned.Refused == 3);
+            Check(store.Current?.Windows.Single().Handle == before.Handle &&
+                native.Matches(before, store.Current.Token) && native.CaptureWindow(owned.Handle).Origin.Id == source.Id);
+            owned.RefusalsRemaining = 0;
+            Check(Pump(engine.Restore).Completed == 1 && store.Current is null);
+        });
+        Test("a corrective placement refuses a stale physical-monitor layout", () =>
+        {
+            Display source = displays[0], destination = displays[1];
+            using Form owned = TestForm(source, "stale placement target");
+            owned.WindowState = FormWindowState.Minimized;
+            Application.DoEvents();
+            SavedWindow before = native.CaptureWindow(owned.Handle);
+            Display stale = destination with { WorkArea = new(0, 0, 100, 100) };
+            Pump(() =>
+            {
+                nint dpi = Native.SetThreadDpiAwarenessContext(-4);
+                Check(dpi != 0);
+                try
+                {
+                    Throws<InvalidOperationException>(() => native.WaitFor(before, stale,
+                        before.Placement with { Normal = stale.WorkArea }, exactRectangle: true));
+                    return true;
+                }
+                finally { Native.SetThreadDpiAwarenessContext(dpi); }
+            });
+            Check(native.CaptureWindow(owned.Handle).Placement == before.Placement);
+        });
+        foreach (Display display in displays)
+            Console.WriteLine($"DISPLAY {display.DeviceName} bounds={display.Bounds} work={display.WorkArea}");
+        foreach (bool restoreMaximized in new[] { true, false })
+        foreach (Display origin in displays)
+        foreach (Display target in displays.Where(display => display.Id != origin.Id))
+        {
+            Test($"minimized (restore maximized={restoreMaximized}) exact placement from {origin.DeviceName} to {target.DeviceName}", () =>
+            {
+                using Form owned = TestForm(origin, "minimized placement regression");
+                if (restoreMaximized) owned.WindowState = FormWindowState.Maximized;
+                owned.WindowState = FormWindowState.Minimized;
+                Application.DoEvents();
+                SavedWindow before = native.CaptureWindow(owned.Handle);
+                Box normal = new(target.Bounds.Left, target.Bounds.Top,
+                    target.Bounds.Left + Math.Min(1920, target.WorkArea.Width),
+                    target.Bounds.Top + Math.Min(1032, target.WorkArea.Height));
+                SavedWindow returning = before with
+                {
+                    Origin = target,
+                    Placement = before.Placement with { Normal = normal, Min = new(-1, -1), Max = new(-1, -1) }
+                };
+                Pump(() => { native.Restore(returning); return true; });
+                SavedWindow after = native.CaptureWindow(owned.Handle);
+                Check(after.Origin.Id == target.Id && after.Placement.Normal == normal &&
+                    Geometry.State(after.Placement.ShowCommand) == 2 &&
+                    (after.Placement.Flags & 2) == (before.Placement.Flags & 2),
+                    "Minimized placement must reach the physical target without changing restoration state.");
+                owned.WindowState = FormWindowState.Normal;
+                Application.DoEvents();
+                Check(native.CaptureWindow(owned.Handle).Origin.Id == target.Id,
+                    "Restoring the minimized window must reveal it on the target monitor.");
+            });
+        }
+    }
+
     private static T Pump<T>(Func<T> operation)
     {
         Task<T> task = Task.Run(operation);
         while (!task.IsCompleted) { Application.DoEvents(); Thread.Sleep(5); }
         return task.GetAwaiter().GetResult();
+    }
+
+    private sealed class DeferringPlacementForm : Form
+    {
+        internal int RefusalsRemaining, Refused;
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct WindowPosition
+        {
+            public nint Window, After;
+            public int X, Y, Width, Height;
+            public uint Flags;
+        }
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg == 0x0046 && RefusalsRemaining > 0) // WM_WINDOWPOSCHANGING
+            {
+                var position = System.Runtime.InteropServices.Marshal.PtrToStructure<WindowPosition>(message.LParam);
+                if ((position.Flags & 2) == 0)
+                {
+                    position.Flags |= 2; // The app declines this frame move (SWP_NOMOVE).
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(position, message.LParam, false);
+                    RefusalsRemaining--;
+                    Refused++;
+                }
+            }
+            base.WndProc(ref message);
+        }
     }
 
     private static void TestUi()

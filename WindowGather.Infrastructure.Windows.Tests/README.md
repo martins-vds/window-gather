@@ -1,5 +1,18 @@
 # Windows infrastructure safety checks
 
+Window movement regressions live in the separate interactive suite:
+`dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- --placement-native`.
+They exercise the reported translated minimized rectangles on owned disposable
+windows, plus cross-monitor minimized/restore-to-maximized cases and transient/
+persistent frame refusals. The native adapter makes at most two corrective
+requests at 250/500 ms within the unchanged 1,200 ms deadline, including when a
+minimized normal rectangle still resolves to the wrong physical monitor.
+It rechecks window identity and the target's physical identity/bounds/work area
+before correction and completion; exact Restore geometry/state and minimized
+restore-to-maximized intent remain required. Minimized windows are not temporarily
+shown, and persistent failures retain their recovery entries. No display setting
+changes or production recovery reads are part of this selector.
+
 Run `dotnet run --project .\WindowGather.Infrastructure.Windows.Tests`.
 These dependency-free tests use injected native seams; they never invoke native display-setting APIs.
 The durable-contract cases use isolated, automatically deleted directories beneath the current checkout

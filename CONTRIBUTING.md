@@ -64,6 +64,17 @@ need two connected displays; missing cases are explicitly skipped. Never
 validate by gathering someone else's windows or editing their recovery file.
 Do not run native/GUI checks on unsuitable hosted runners.
 
+For the focused interactive placement regression (two or more displays):
+
+```powershell
+dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- --placement-native
+```
+
+This selector moves only disposable test windows. It checks minimized normal
+rectangles/restore-to-maximized flags, bounded correction after a translated
+placement or refused frame request, and retained recovery on persistent failure.
+It never changes primary display settings or uses production recovery.
+
 The real-XAML test and preview use simulated displays/windows and disposable
 state; they do not register production shortcuts or move your applications:
 

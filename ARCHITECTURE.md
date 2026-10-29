@@ -203,7 +203,7 @@ Fake-native adapter tests run in normal verification; actual primary writes are
 separate OS-setting changes requiring explicit permission and multi-monitor hardware.
 
 `global.json` pins SDK 10.0.401, and `Directory.Build.props` selects stable
-C# 14 explicitly. Windows App SDK is 2.5.1; CommunityToolkit.Mvvm is 8.4.2.
+C# 14 explicitly. Windows App SDK is 2.6.4; CommunityToolkit.Mvvm is 8.4.2.
 NuGet lock files and the local tool manifest pin dependencies and tools.
 Testing uses VSTest, xUnit and coverlet.collector, not the separate MTP
 integration. Local tools are Stryker 5.0.0 and ReportGenerator 5.5.11.

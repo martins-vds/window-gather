@@ -185,6 +185,12 @@ internal static class Program
                     var permissions = new DirectoryInfo(directory).GetAccessControl();
                     Check(permissions.AreAccessRulesProtected);
                     using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                    Check(identity.User!.Equals(permissions.GetOwner(typeof(System.Security.Principal.SecurityIdentifier))),
+                        "New state directories must be owned by the user, not the token's default owner group.");
+                    var filePermissions = new FileInfo(Path.Combine(directory, "shortcuts.json")).GetAccessControl();
+                    Check(identity.User.Equals(filePermissions.GetOwner(typeof(System.Security.Principal.SecurityIdentifier))) &&
+                        filePermissions.AreAccessRulesProtected,
+                        "New state files must have an explicit user owner and protected ACL.");
                     var system = new System.Security.Principal.SecurityIdentifier(
                         System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
                     foreach (System.Security.AccessControl.FileSystemAccessRule rule in permissions.GetAccessRules(
@@ -237,12 +243,11 @@ internal static class Program
     private static void TestSafeTemporaryFiles()
     {
         string directory = Path.Combine(AppContext.BaseDirectory, "teststate-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
         string sessionTemporary = Path.Combine(directory, "session.json.tmp");
         string shortcutTemporary = Path.Combine(directory, "shortcuts.json.tmp");
         string linkedTarget = Path.Combine(directory, "linked-target.txt");
         const string sentinel = "An existing file must never be truncated.";
-        File.WriteAllText(linkedTarget, sentinel);
+        LocalStateFile.Write(linkedTarget, System.Text.Encoding.UTF8.GetBytes(sentinel));
         Check(CreateHardLink(sessionTemporary, linkedTarget, 0), "The owned hard-link fixture must be created.");
         File.WriteAllText(shortcutTemporary, sentinel);
         try
@@ -298,11 +303,10 @@ internal static class Program
             """;
         const string shortcutJson = """{"Gather":{"Modifiers":3,"Key":122},"Restore":{"Modifiers":3,"Key":123}}""";
         string directory = Path.Combine(AppContext.BaseDirectory, "legacy-contract-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
         try
         {
             string sessionPath = Path.Combine(directory, "session.json");
-            File.WriteAllText(sessionPath, recovery);
+            LocalStateFile.Write(sessionPath, System.Text.Encoding.UTF8.GetBytes(recovery));
             var store = new SessionStore(directory);
             GatherSession loaded = store.Load()!;
             Check(loaded.Windows.Single().Placement.Flags == 2 && loaded.Windows.Single().Placement.ShowCommand == 3);
@@ -321,7 +325,7 @@ internal static class Program
                 pending.Target == loaded.Target && pending.Windows.SequenceEqual(loaded.Windows),
                 "Automatic-return bookkeeping must preserve all legacy return fields.");
             string shortcutPath = Path.Combine(directory, "shortcuts.json");
-            File.WriteAllText(shortcutPath, shortcutJson);
+            LocalStateFile.Write(shortcutPath, System.Text.Encoding.UTF8.GetBytes(shortcutJson));
             var shortcuts = new ShortcutStore(directory);
             Check(shortcuts.Load() == ShortcutSettings.Defaults);
             shortcuts.Save(shortcuts.Load());

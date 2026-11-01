@@ -25,7 +25,10 @@ internal static class LocalStateFile
         if (Exists(path)) RejectLink(path);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         // CreateNew cannot truncate an existing file or follow a pre-created link.
-        using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        SecurityIdentifier user = identity.User ?? throw new UnauthorizedAccessException("Cannot identify the current Windows user.");
+        using (var stream = new FileInfo(temporary).Create(FileMode.CreateNew, FileSystemRights.Write,
+            FileShare.None, 4096, FileOptions.None, FilePermissions(user)))
         {
             try
             {
@@ -56,18 +59,19 @@ internal static class LocalStateFile
         for (DirectoryInfo? current = new(directory); current is not null; current = current.Parent)
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
                 throw new IOException($"Settings/recovery cannot use a linked directory: {current.FullName}");
-        DirectoryInfo info = Directory.CreateDirectory(directory);
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         SecurityIdentifier user = identity.User ?? throw new UnauthorizedAccessException("Cannot identify the current Windows user.");
-        DirectorySecurity existing = info.GetAccessControl(AccessControlSections.Owner);
-        if (!user.Equals(existing.GetOwner(typeof(SecurityIdentifier))))
-            throw new UnauthorizedAccessException($"Settings/recovery directory is not owned by the current user: {directory}");
         var security = new DirectorySecurity();
         security.SetOwner(user);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         foreach (SecurityIdentifier principal in new[] { user, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
             security.AddAccessRule(new FileSystemAccessRule(principal, FileSystemRights.FullControl,
                 InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        var info = new DirectoryInfo(directory);
+        if (!info.Exists) info.Create(security);
+        DirectorySecurity existing = info.GetAccessControl(AccessControlSections.Owner);
+        if (!user.Equals(existing.GetOwner(typeof(SecurityIdentifier))))
+            throw new UnauthorizedAccessException($"Settings/recovery directory is not owned by the current user: {directory}");
         info.SetAccessControl(security);
     }
 
@@ -78,11 +82,17 @@ internal static class LocalStateFile
         SecurityIdentifier user = identity.User ?? throw new UnauthorizedAccessException("Cannot identify the current Windows user.");
         if (!user.Equals(info.GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier))))
             throw new UnauthorizedAccessException($"Settings/recovery file is not owned by the current user: {path}");
+        info.SetAccessControl(FilePermissions(user));
+    }
+
+    private static FileSecurity FilePermissions(SecurityIdentifier user)
+    {
         var security = new FileSecurity();
+        security.SetOwner(user);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         foreach (SecurityIdentifier principal in new[] { user, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
             security.AddAccessRule(new FileSystemAccessRule(principal, FileSystemRights.FullControl, AccessControlType.Allow));
-        info.SetAccessControl(security);
+        return security;
     }
 
     private static void RejectLink(string path)

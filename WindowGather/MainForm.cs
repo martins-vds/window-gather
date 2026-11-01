@@ -31,6 +31,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem trayRestore = new("Restore borrowed windows");
     private bool busy;
     private bool exiting;
+    private bool shortcutConfirmationOpen;
 
     public MainForm(GatherEngine engine) : this(engine, new ShortcutStore(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WindowGather")), null) { }
@@ -191,8 +192,8 @@ public sealed class MainForm : Form
 
     private void UpdateShortcutReference(ShortcutSettings settings)
     {
-        shortcutReference.Text = $"{settings.Gather}  Gather onto the display under your pointer\n" +
-            $"{settings.Restore}  Restore borrowed windows\n" +
+        shortcutReference.Text = $"{settings.Gather}  Confirm Gather onto the display under your pointer\n" +
+            $"{settings.Restore}  Confirm Restore borrowed windows\n" +
             "Closing this window keeps the app running in the notification area.";
     }
 
@@ -250,13 +251,27 @@ public sealed class MainForm : Form
 
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg == 0x0312)
+        if (message.Msg == 0x0312 && !busy && !shortcutConfirmationOpen)
         {
             int id = message.WParam.ToInt32();
-            if (id == shortcutController.GatherId)
-                _ = Execute(() => engine.Gather(engine.GetPointerDisplay()));
-            else if (id == shortcutController.RestoreId)
-                _ = Execute(engine.Restore);
+            bool gathering = id == shortcutController.GatherId;
+            if ((gathering && engine.Session is null) || (id == shortcutController.RestoreId && engine.Session is not null))
+            {
+                shortcutConfirmationOpen = true;
+                try
+                {
+                    Display? target = gathering ? engine.GetPointerDisplay() : null;
+                    ShowWindow();
+                    string prompt = gathering
+                        ? $"Gather windows onto {target}? Their contents may become visible to anyone viewing that display."
+                        : "Restore borrowed windows? Their contents may become visible on their original displays.";
+                    if (MessageBox.Show(this, prompt, "Allow shortcut movement?", MessageBoxButtons.OKCancel,
+                        MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK)
+                        _ = Execute(() => target is not null ? engine.Gather(target) : engine.Restore());
+                }
+                catch (Exception error) { ShowDetails("Shortcut movement failed: " + error.Message); }
+                finally { shortcutConfirmationOpen = false; }
+            }
         }
         base.WndProc(ref message);
     }
@@ -370,7 +385,7 @@ public sealed class MainForm : Form
 
     private void ExitApplication()
     {
-        if (busy) return;
+        if (busy || shortcutConfirmationOpen) return;
         if (engine.Session is not null && MessageBox.Show(this,
             "Borrowed windows will stay where they are. Your return positions are saved; " +
             "reopen Window Gather to restore them. Exit now?", "Exit Window Gather",

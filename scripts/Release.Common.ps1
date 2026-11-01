@@ -20,7 +20,10 @@ function Get-SigningPolicy([string]$Mode, [string]$RepositoryEnabled = '') {
     switch -CaseSensitive ($Mode) {
         'auto' { return $RepositoryEnabled -ceq 'true' }
         'enabled' { return $true }
-        'disabled' { return $false }
+        'disabled' {
+            if ($RepositoryEnabled -ceq 'true') { throw 'Repository signing policy cannot be disabled for a release.' }
+            return $false
+        }
         default { throw 'Signing mode must be auto, enabled or disabled.' }
     }
 }
@@ -118,6 +121,10 @@ function Assert-ReleaseExecutable([string]$Executable, $Version, [string]$Runtim
         $manifest.assembly.assemblyIdentity.name -cne 'WindowGather.WinUI') {
         throw 'Embedded native manifest differs from the release version.'
     }
+    $level = $manifest.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+    if ($null -eq $level -or $level.level -cne 'asInvoker' -or $level.uiAccess -cne 'false') {
+        throw 'Release executable must use asInvoker without UI access.'
+    }
 }
 
 function Assert-ReleaseSignature([string]$Executable, [bool]$Required) {
@@ -126,14 +133,18 @@ function Assert-ReleaseSignature([string]$Executable, [bool]$Required) {
         if ($signature.Status -ne 'NotSigned') { throw 'Unsigned mode received an unexpectedly signed or invalid executable.' }
         return
     }
-    if ($signature.Status -ne 'Valid' -or $null -eq $signature.TimeStamperCertificate) {
-        throw 'Required Authenticode signature or timestamp is missing/invalid.'
-    }
+    Assert-TrustedSignature $signature
     $tools = @(Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
         Sort-Object { [version]$_.Directory.Parent.Name } -Descending)
     if ($tools.Count -eq 0) { throw 'SignTool is required to verify signed releases.' }
     & $tools[0].FullName verify /pa /all /v /tw $Executable
     if ($LASTEXITCODE -ne 0) { throw 'SignTool signature/timestamp verification failed.' }
+}
+
+function Assert-TrustedSignature($Signature) {
+    if ($Signature.Status -ne 'Valid' -or $null -eq $Signature.TimeStamperCertificate) {
+        throw 'Required Authenticode signature or timestamp is missing/invalid.'
+    }
 }
 
 function New-ReleaseZip([string]$Directory, [string]$Destination, [DateTimeOffset]$Timestamp) {
@@ -155,7 +166,7 @@ function New-ReleaseZip([string]$Directory, [string]$Destination, [DateTimeOffse
     finally { $zip.Dispose(); $stream.Dispose() }
 }
 
-function Assert-ReleaseArchive([string]$Archive, $Version, [string]$Commit, [string]$Runtime) {
+function Assert-ReleaseArchive([string]$Archive, $Version, [string]$Commit, [string]$Runtime, [switch]$SigningRequired) {
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {
         $names = @($zip.Entries | ForEach-Object FullName)
@@ -185,6 +196,16 @@ function Assert-ReleaseArchive([string]$Archive, $Version, [string]$Commit, [str
         }
         if ($manifest.executableSha256 -cne $hashes['WindowGather.WinUI.exe'] -or
             $manifest.sourceArchiveSha256 -cne $hashes['source.zip']) { throw 'Archive bytes differ from the manifest.' }
+        if ($SigningRequired -or $manifest.authenticodeSigned) {
+            if (-not $manifest.authenticodeSigned) { throw 'Stable publication refuses unsigned archives.' }
+            $signatureProof = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Archive))) (
+                'signature-proof-' + [guid]::NewGuid().ToString('N') + '.exe')
+            try {
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($zip.GetEntry('WindowGather.WinUI.exe'), $signatureProof, $false)
+                Assert-TrustedSignature (Get-AuthenticodeSignature -LiteralPath $signatureProof)
+            }
+            finally { if (Test-Path -LiteralPath $signatureProof) { Remove-Item -LiteralPath $signatureProof } }
+        }
         $proofDirectory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Archive))
         $proof = Join-Path $proofDirectory ('source-proof-' + [guid]::NewGuid().ToString('N') + '.zip')
         try {

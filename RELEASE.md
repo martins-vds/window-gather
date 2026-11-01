@@ -29,8 +29,12 @@ Managed assembly, native PE product/file versions, architecture, embedded
 manifest and assembly source metadata are inspected without executing the app.
 
 The pinned C# 14, SDK, packages and ordinary lock files stay in effect.
-RID/tag-specific restore graphs use `obj\packages.release-<RID>-<tag>.lock.json`;
-they never overwrite ordinary checked-in locks.
+Publish restore graphs are checked in per project as
+`packages.publish-<RID>-<Format>.lock.json`, independent of release tag.
+Publishing restores with `--locked-mode`, then uses `--no-restore` with the same
+properties; ordinary development locks remain separate. Dependency updates must
+deliberately regenerate and review all four RID/format graphs with `dotnet restore
+--force-evaluate` and the matching publish properties before committing them.
 
 ## GitHub workflow
 
@@ -77,6 +81,12 @@ Those remain separate local interactive suites touching owned windows only.
 Unsigned packaging has read-only repository permissions and no OIDC privilege
 or Azure login. Required signing runs in a separate protected `artifact-signing`
 job with `id-token: write`; only final publication receives `contents: write`.
+All publication, signed or unsigned, also requires approval in the `release`
+environment. Both environments restrict deployment to main or `v*` tags and
+disable administrator bypass. Main requires pull requests and passing
+`core-and-build`/`mutation` checks; stable tags prohibit updates/deletion.
+These live GitHub settings were configured during security hardening and must
+be preserved separately from the workflow files.
 Azure actions are pinned to the reference's immutable SHAs.
 
 All action references are pinned to verified stable release commits (reviewed
@@ -130,6 +140,9 @@ commit comment; verification compares its hash to a fresh archive of that tree.
 The manifest records tag/version/assemblyVersion, component `Window Gather`,
 RID, commit, Authenticode state/provider and hashes of the **final** EXE/source.
 Outer checksums describe final distributable archives, after any signing.
+Publication rechecks the archived EXE's Authenticode signature and timestamp
+whenever the manifest declares signing, and rejects unsigned archives when
+the prepared policy requires signing.
 
 These are unpackaged, self-contained WinUI single executables **with runtime
 extraction**, not extraction-free apps. Publishing preserves
@@ -155,12 +168,16 @@ Do not bypass OS/security warnings on someone else's behalf.
 Default `auto` releases are unsigned while repository variable
 `AZURE_ARTIFACT_SIGNING_ENABLED` is unset or exactly `false`. Exactly `true`
 requires signing; other values fail validation. Explicit `enabled` requires
-signing even if the default is false; `disabled` never logs into Azure.
+signing even if the default is false. `disabled` never logs into Azure, but is
+rejected if the repository variable is `true`; an enabled repository signing
+policy cannot be downgraded. Signing remains optional for now by maintainer
+decision. Unsigned releases still need approval, and their checksums do not
+authenticate a compromised publisher.
 
 Before enabling signing, maintainers must arrange Azure identity verification,
 an Artifact Signing account/certificate profile and a federated OIDC identity
-authorized to sign that profile. Create/protect the GitHub `artifact-signing`
-environment with appropriate reviewers/tag restrictions and configure:
+authorized to sign that profile. Preserve the protected GitHub `artifact-signing`
+environment's reviewers/tag restrictions and configure:
 
 | Scope | Names |
 | --- | --- |

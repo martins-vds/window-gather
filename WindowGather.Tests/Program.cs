@@ -148,6 +148,55 @@ internal static class Program
                 Check(desktop.Windows[1].Placement.ShowCommand == 2);
             });
             Test("disk recovery round trips and rejects corrupt data", TestDiskStore);
+            Test("storage never opens predictable temporary files", TestSafeTemporaryFiles);
+            Test("failed atomic replacement keeps recovery and removes owned temporary files", () =>
+            {
+                string directory = Path.Combine(AppContext.BaseDirectory, "teststate-" + Guid.NewGuid().ToString("N"));
+                string path = Path.Combine(directory, "session.json");
+                var store = new SessionStore(directory);
+                var session = new GatherSession { Token = Guid.NewGuid().ToString(), Target = B, Windows = [Window(1, A)] };
+                try
+                {
+                    store.Save(session);
+                    string original = File.ReadAllText(path);
+                    var changed = new GatherSession { Token = Guid.NewGuid().ToString(), Target = B, Windows = [Window(1, A)] };
+                    using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        Throws<UnauthorizedAccessException>(() => store.Save(changed));
+                    Check(File.ReadAllText(path) == original);
+                    Check(Directory.GetFiles(directory).Length == 1);
+                }
+                finally
+                {
+                    File.Delete(path);
+                    if (Directory.Exists(directory)) Directory.Delete(directory);
+                }
+            });
+            Test("elevated tokens are rejected before desktop initialization", () =>
+            {
+                RuntimePolicy.ValidateElevation(false);
+                Throws<InvalidOperationException>(() => RuntimePolicy.ValidateElevation(true));
+            });
+            Test("recovery and shortcuts restrict inherited access", () =>
+            {
+                string directory = Path.Combine(AppContext.BaseDirectory, "teststate-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    new ShortcutStore(directory).Save(ShortcutSettings.Defaults);
+                    var permissions = new DirectoryInfo(directory).GetAccessControl();
+                    Check(permissions.AreAccessRulesProtected);
+                    using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                    var system = new System.Security.Principal.SecurityIdentifier(
+                        System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+                    foreach (System.Security.AccessControl.FileSystemAccessRule rule in permissions.GetAccessRules(
+                        true, true, typeof(System.Security.Principal.SecurityIdentifier)))
+                        Check(rule.IdentityReference.Equals(identity.User) || rule.IdentityReference.Equals(system));
+                }
+                finally
+                {
+                    File.Delete(Path.Combine(directory, "shortcuts.json"));
+                    if (Directory.Exists(directory)) Directory.Delete(directory);
+                }
+            });
             Test("legacy recovery schema and numeric shortcuts retain exact file contracts", TestLegacyContracts);
             TestShortcuts();
             if (args.Contains("--native")) TestNative();
@@ -184,6 +233,41 @@ internal static class Program
             if (Directory.Exists(directory)) Directory.Delete(directory);
         }
     }
+
+    private static void TestSafeTemporaryFiles()
+    {
+        string directory = Path.Combine(AppContext.BaseDirectory, "teststate-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string sessionTemporary = Path.Combine(directory, "session.json.tmp");
+        string shortcutTemporary = Path.Combine(directory, "shortcuts.json.tmp");
+        string linkedTarget = Path.Combine(directory, "linked-target.txt");
+        const string sentinel = "An existing file must never be truncated.";
+        File.WriteAllText(linkedTarget, sentinel);
+        Check(CreateHardLink(sessionTemporary, linkedTarget, 0), "The owned hard-link fixture must be created.");
+        File.WriteAllText(shortcutTemporary, sentinel);
+        try
+        {
+            var store = new SessionStore(directory);
+            var session = new GatherSession { Token = Guid.NewGuid().ToString(), Target = B, Windows = [Window(1, A)] };
+            store.Save(session);
+            new ShortcutStore(directory).Save(ShortcutSettings.Defaults);
+            Check(File.ReadAllText(sessionTemporary) == sentinel);
+            Check(File.ReadAllText(linkedTarget) == sentinel, "Pre-created temporary links must never redirect a write.");
+            Check(File.ReadAllText(shortcutTemporary) == sentinel);
+            Check(store.Load()!.Token == session.Token);
+            Check(Directory.GetFiles(directory).Length == 5, "Atomic-write temporary files must be removed.");
+        }
+        finally
+        {
+            foreach (string name in new[] { "session.json", "shortcuts.json", "session.json.tmp", "shortcuts.json.tmp", "linked-target.txt" })
+                File.Delete(Path.Combine(directory, name));
+            Directory.Delete(directory);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    private static extern bool CreateHardLink(string name, string target, nint security);
 
     private static void TestLegacyContracts()
     {

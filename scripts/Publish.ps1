@@ -13,7 +13,7 @@ try {
     $output = Join-Path 'artifacts' ("publish-$Runtime-" + $Format.ToLowerInvariant())
     if ($OutputDirectory) { $output = $OutputDirectory }
     $versionProperties = @()
-    $lock = "obj\packages.publish-$Runtime-$Format.lock.json"
+    $lock = "packages.publish-$Runtime-$Format.lock.json"
     if ($Tag) {
         . .\scripts\Release.Common.ps1
         $releaseVersion = Get-ReleaseVersion $Tag
@@ -22,14 +22,17 @@ try {
             "-p:PackageVersion=$($releaseVersion.Version)", "-p:AssemblyVersion=$($releaseVersion.AssemblyVersion)",
             "-p:FileVersion=$($releaseVersion.AssemblyVersion)", "-p:InformationalVersion=$($releaseVersion.Version)",
             '-p:IncludeSourceRevisionInInformationalVersion=false', "-p:RepositoryCommit=$Commit", '-p:ContinuousIntegrationBuild=true')
-        $lock = "obj\packages.release-$Runtime-$Tag.lock.json"
     }
+    $properties = @(
+        '-p:UiTestBuild=false', '-p:WindowsPackageType=None', '-p:EnableMsixTooling=true', '-p:WindowsAppSDKSelfContained=true',
+        '-p:SelfContained=true', "-p:PublishSingleFile=$single", "-p:IncludeAllContentForSelfExtract=$single",
+        "-p:IncludeNativeLibrariesForSelfExtract=$single",
+        "-p:NuGetLockFilePath=$lock", '-p:DebugType=none', '-p:DebugSymbols=false'
+    ) + $versionProperties
+    & dotnet restore .\WindowGather.WinUI\WindowGather.WinUI.csproj -r $Runtime --locked-mode --nologo @properties
+    if ($LASTEXITCODE -ne 0) { throw "Locked publish restore failed with exit code $LASTEXITCODE." }
     & dotnet publish .\WindowGather.WinUI\WindowGather.WinUI.csproj -c Release -r $Runtime --self-contained true `
-        -p:UiTestBuild=false -p:WindowsPackageType=None -p:EnableMsixTooling=true -p:WindowsAppSDKSelfContained=true `
-        "-p:PublishSingleFile=$single" "-p:IncludeAllContentForSelfExtract=$single" `
-        "-p:IncludeNativeLibrariesForSelfExtract=$single" `
-        "-p:NuGetLockFilePath=$lock" `
-        -p:DebugType=none -p:DebugSymbols=false -o $output --nologo @versionProperties
+        --no-restore -o $output --nologo @properties
     if ($LASTEXITCODE -ne 0) { throw "Publish failed with exit code $LASTEXITCODE." }
     if ($single) {
         $files = @(Get-ChildItem -LiteralPath $output -File)

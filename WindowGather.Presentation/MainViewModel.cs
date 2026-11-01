@@ -104,6 +104,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Dispatch(() => Present(reply));
     }
 
+    public void PresentShortcutResult(OperationReply reply) => Dispatch(() => Present(reply));
+
     public async Task NotifyTopologyChangedAsync()
     {
         OperationReply? reply = await coordinator.NotifyTopologyChangedAsync().ConfigureAwait(false);
@@ -130,8 +132,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void UpdateShortcuts(IReadOnlyList<string> registrationWarnings)
     {
-        ShortcutReference = $"{shortcuts.Settings.Gather}  Gather onto the display under your pointer\n" +
-            $"{shortcuts.Settings.Restore}  Restore borrowed windows\n" +
+        ShortcutReference = $"{shortcuts.Settings.Gather}  Confirm Gather onto the display under your pointer\n" +
+            $"{shortcuts.Settings.Restore}  Confirm Restore borrowed windows\n" +
             "Closing this window keeps the app running in the notification area.";
         ShortcutWarning = string.Join("\n", new[] { loadWarning }.Where(s => s.Length > 0).Concat(registrationWarnings));
     }

@@ -53,6 +53,24 @@ internal static class UiParityTests
             var gather = Descendants(root).OfType<Button>().Single(b => Equals(b.Content, "Gather to selected display"));
             var restore = Descendants(root).OfType<Button>().Single(b => Equals(b.Content, "Restore borrowed windows"));
             Check(gather.IsEnabled && !restore.IsEnabled, "Real command bindings initially enabled.");
+            Task<bool> confirmation = window.ConfirmShortcutAsync(OperationKind.GatherSelected, model.SelectedDisplay);
+            await SettleAsync();
+            ContentDialog shortcutDialog = OpenShortcutDialog(root);
+            Check(shortcutDialog.DefaultButton == ContentDialogButton.Close &&
+                shortcutDialog.Content.ToString()!.Contains("visible"), "Shortcut prompt defaults to Cancel and warns about display exposure.");
+            Check(!await window.ConfirmShortcutAsync(OperationKind.GatherSelected, model.SelectedDisplay),
+                "Overlapping shortcut dialogs are rejected.");
+            shortcutDialog.Hide();
+            Check(!await confirmation && !model.HasRecovery, "Cancelling a real shortcut dialog moves nothing.");
+            confirmation = window.ConfirmShortcutAsync(OperationKind.GatherSelected, model.SelectedDisplay);
+            await SettleAsync();
+            shortcutDialog = OpenShortcutDialog(root);
+            Button approve = Descendants(shortcutDialog).OfType<Button>()
+                .Single(b => Equals(b.Content, "Gather windows"));
+            var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(approve);
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(
+                Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            Check(await confirmation && !model.HasRecovery, "Approval permits the coordinator to move; the dialog does not move windows itself.");
             await model.GatherCommand.ExecuteAsync(null);
             await SettleAsync();
             Check(!gather.IsEnabled && restore.IsEnabled && !picker.IsEnabled, "Real command bindings and recovery selection lock.");
@@ -133,6 +151,7 @@ internal static class UiParityTests
             Check(window.AppWindow.IsVisible && model.ShortcutReference == reference, "Reopen preserves state.");
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-parity-results.txt"),
                 "PASS WinUI XAML selection, command invalidation, recovery lock, persistent recovery, resident exclusion, " +
+                "shortcut confirmation/cancellation/default/overlap, " +
                 "partial restore, destination disconnect, durable pending warning, reconnect without movement, " +
                 "error visibility, pinned footer with simultaneous warnings, one summary, compact layout, light/dark themes, restart, close-to-hide and reopen.");
         }
@@ -159,6 +178,9 @@ internal static class UiParityTests
     }
 
     private static async Task SettleAsync() => await Task.Delay(150);
+    private static ContentDialog OpenShortcutDialog(Grid root) =>
+        VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+            .SelectMany(p => Descendants(p.Child).Prepend(p.Child)).OfType<ContentDialog>().Single();
     private static void Check(bool success, string message)
     {
         if (!success) throw new InvalidOperationException("UI parity failed: " + message);

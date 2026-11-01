@@ -9,11 +9,9 @@ public sealed class SessionStore(string directory) : ISessionStore
 
     public GatherSession? Load()
     {
-        if (!File.Exists(path)) return null;
-        var file = new FileInfo(path);
-        if (file.Length > 16 * 1024 * 1024)
-            throw new InvalidDataException($"The recovery file is too large: {path}");
-        var data = JsonSerializer.Deserialize<SessionData>(File.ReadAllText(path), Options)
+        string? json = LocalStateFile.Read(path, 16 * 1024 * 1024);
+        if (json is null) return null;
+        var data = JsonSerializer.Deserialize<SessionData>(json, Options)
             ?? throw new InvalidDataException($"The recovery file is empty: {path}");
         if (data.Version != 1 || !Guid.TryParse(data.Token, out _) ||
             data.Windows is null || data.Windows.Count > 10000 ||
@@ -30,18 +28,11 @@ public sealed class SessionStore(string directory) : ISessionStore
 
     public void Save(GatherSession session)
     {
-        Directory.CreateDirectory(directory);
-        string temporary = path + ".tmp";
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(SessionData.From(session), Options);
-        using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            stream.Write(bytes);
-            stream.Flush(flushToDisk: true);
-        }
-        File.Move(temporary, path, overwrite: true);
+        LocalStateFile.Write(path, bytes);
     }
 
-    public void Clear() => File.Delete(path);
+    public void Clear() => LocalStateFile.Delete(path);
 
     private readonly record struct BoxData(int Left, int Top, int Right, int Bottom)
     {

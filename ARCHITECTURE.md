@@ -27,7 +27,8 @@ this is not a claim that every possible external reflection consumer was tested.
 
 - `%LOCALAPPDATA%\WindowGather\session.json` keeps schema 1 and the original
   field names through explicit infrastructure DTO mappings. Writes retain
-  temporary-file creation, flush-to-disk and atomic replacement.
+  exclusive random-name temporary-file creation, flush-to-disk and atomic replacement.
+  Windows ACLs restrict local state to its owner and SYSTEM; symlink/junction paths are rejected.
 - `%LOCALAPPDATA%\WindowGather\shortcuts.json` retains numeric Windows
   virtual-key values. The portable `ShortcutKey` replaces WinForms `Keys`
   without rewriting existing settings. Shortcut replacement reserves new
@@ -240,8 +241,8 @@ Single-file means one **distributable** executable with runtime extraction,
 not extraction-free execution. Publishing sets `WindowsPackageType=None`,
 `WindowsAppSDKSelfContained=true`, `SelfContained=true`,
 `EnableMsixTooling=true`, `PublishSingleFile=true` and
-`IncludeAllContentForSelfExtract=true`. It uses separate ignored
-`obj\packages.publish-<RID>-<Format>.lock.json` restore graphs so RID/ILLink
+`IncludeAllContentForSelfExtract=true`. It uses separate
+checked-in `packages.publish-<RID>-<Format>.lock.json` restore graphs so RID/ILLink
 dependencies do not alter checked-in ordinary restore locks.
 
 Outputs are `artifacts\publish-win-x64-folder`,
@@ -258,7 +259,7 @@ unverified. These local artifacts are not a new signed release.
 The separate [release pipeline](RELEASE.md) gates Windows x64 and ARM64
 single-executable archives on the existing portable quality/mutation checks.
 An exact stable tag drives managed, native-manifest and app-title versions;
-source identity is recorded separately. Tag/RID-specific ignored lock graphs
+source identity is recorded separately. RID/format-specific checked-in lock graphs
 leave normal development restores unchanged.
 
 From a clean committed checkout, use `scripts\Release.ps1 -Tag vX.Y.Z
@@ -268,3 +269,12 @@ EXE, usage, VERSION, manifest, checksums and the exact committed `source.zip`.
 Default signing is disabled; protected OIDC signing must be explicitly
 configured. Required signing failures block publication, and existing GitHub
 assets are never clobbered. Local packaging does not create a tag or release.
+All publication requires approval in the protected `release` environment.
+Enabling the repository signing policy cannot be undone by a manual disabled
+input; signatures are rechecked from the final archive before publication.
+
+Both frontends reject elevated launches and confirm shortcut movement before
+execution. WinUI's shared `ShortcutMovement` captures the pointer destination before
+confirmation, rejects overlapping prompts and routes approved movement through
+the operation coordinator. Same-user Windows messages and window properties
+are not authentication boundaries.

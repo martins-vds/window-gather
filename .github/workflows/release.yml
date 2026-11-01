@@ -233,6 +233,7 @@ jobs:
        (needs.package-signed.result == 'success' && needs.package-unsigned.result == 'skipped'))
     needs: [prepare, build, package-unsigned, package-signed]
     runs-on: windows-latest
+    environment: release
     permissions:
       contents: write
     steps:
@@ -255,4 +256,5 @@ jobs:
           RELEASE_REPOSITORY: ${{ github.repository }}
           NEW_RELEASE_TAG: ${{ needs.prepare.outputs.new_tag }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY -AllowNewTag:($env:NEW_RELEASE_TAG -eq 'true') -AutomaticToken -DefaultBranch $env:DEFAULT_BRANCH
+          RELEASE_SIGNING_REQUIRED: ${{ needs.prepare.outputs.signing_enabled }}
+        run: .\scripts\Publish-GitHubRelease.ps1 -Tag $env:RELEASE_TAG -Commit $env:SOURCE_COMMIT -Repository $env:RELEASE_REPOSITORY -AllowNewTag:($env:NEW_RELEASE_TAG -eq 'true') -AutomaticToken -DefaultBranch $env:DEFAULT_BRANCH -SigningRequired:($env:RELEASE_SIGNING_REQUIRED -eq 'true')

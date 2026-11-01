@@ -9,10 +9,9 @@ public sealed class ShortcutStore(string directory) : IShortcutStore
 
     public ShortcutSettings Load()
     {
-        if (!File.Exists(path)) return ShortcutSettings.Defaults;
-        if (new FileInfo(path).Length > 4096)
-            throw new InvalidDataException("The shortcut settings file is too large.");
-        var data = JsonSerializer.Deserialize<SettingsData>(File.ReadAllText(path))
+        string? json = LocalStateFile.Read(path, 4096);
+        if (json is null) return ShortcutSettings.Defaults;
+        var data = JsonSerializer.Deserialize<SettingsData>(json)
             ?? throw new InvalidDataException("The shortcut settings file is empty.");
         if (data.Gather is null || data.Restore is null)
             throw new InvalidDataException("Both shortcuts must be specified.");
@@ -24,15 +23,8 @@ public sealed class ShortcutStore(string directory) : IShortcutStore
     public void Save(ShortcutSettings settings)
     {
         settings.Validate();
-        Directory.CreateDirectory(directory);
-        string temporary = path + ".tmp";
         var data = new SettingsData(ShortcutData.From(settings.Gather), ShortcutData.From(settings.Restore));
-        using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            stream.Write(JsonSerializer.SerializeToUtf8Bytes(data));
-            stream.Flush(flushToDisk: true);
-        }
-        File.Move(temporary, path, overwrite: true);
+        LocalStateFile.Write(path, JsonSerializer.SerializeToUtf8Bytes(data));
     }
 
     private sealed record ShortcutData(uint Modifiers, int Key)

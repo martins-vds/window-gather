@@ -5,6 +5,7 @@ param(
     [string]$AssetDirectory = 'release-assets',
     [switch]$AllowNewTag,
     [switch]$AutomaticToken,
+    [switch]$SigningRequired,
     [string]$DefaultBranch = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -26,7 +27,7 @@ if ($null -eq $tagCommit -and $AutomaticToken) { Assert-AutomaticTagPermission $
 $assets = @()
 foreach ($runtime in @('win-x64', 'win-arm64')) {
     $path = Join-Path $AssetDirectory "window-gather-windows-$($runtime.Substring(4))-$Tag.zip"
-    $null = Assert-ReleaseArchive $path $version $Commit $runtime
+    $null = Assert-ReleaseArchive $path $version $Commit $runtime -SigningRequired:$SigningRequired
     $assets += Get-Item -LiteralPath $path
 }
 foreach ($file in Get-ChildItem -LiteralPath $AssetDirectory -File) {

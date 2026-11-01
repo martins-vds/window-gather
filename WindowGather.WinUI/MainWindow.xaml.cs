@@ -132,6 +132,28 @@ public sealed partial class MainWindow : Window
     private async void ForgetClicked(object sender, RoutedEventArgs args) => await ConfirmForgetAsync();
     private void ExitClicked(object sender, RoutedEventArgs args) => ExitRequested?.Invoke();
 
+    public async Task<bool> ConfirmShortcutAsync(OperationKind kind, Display? target)
+    {
+        if (dialogOpen || ViewModel.IsBusy) return false;
+        if (kind == OperationKind.GatherSelected ? !ViewModel.CanSelect : !ViewModel.CanRestoreRecovery) return false;
+        ShowWindow();
+        dialogOpen = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot, Title = "Allow shortcut movement?",
+                Content = kind == OperationKind.GatherSelected
+                    ? $"Gather windows onto {target}? Their contents may become visible to anyone viewing that display."
+                    : "Restore borrowed windows? Their contents may become visible on their original displays.",
+                PrimaryButtonText = kind == OperationKind.GatherSelected ? "Gather windows" : "Restore windows",
+                CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        finally { dialogOpen = false; }
+    }
+
     public async Task ConfirmForgetAsync()
     {
         if (dialogOpen || !ViewModel.ForgetCommand.CanExecute(null)) return;

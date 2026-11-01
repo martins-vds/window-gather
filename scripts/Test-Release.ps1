@@ -25,12 +25,15 @@ foreach ($tag in @('', '2.1.3', 'v2.1', 'v2', 'v2.1.3.4', 'v2.1.3-beta', 'V2.1.3
 foreach ($enabled in @('', 'false', 'true')) {
     Check ((Get-SigningPolicy auto $enabled) -eq ($enabled -ceq 'true')) "auto/$enabled"
     Check (Get-SigningPolicy enabled $enabled) "enabled/$enabled"
-    Check (-not (Get-SigningPolicy disabled $enabled)) "disabled/$enabled"
+    if ($enabled -ceq 'true') { Reject { Get-SigningPolicy disabled $enabled } 'enabled repository signing cannot be downgraded' }
+    else { Check (-not (Get-SigningPolicy disabled $enabled)) "optional disabled/$enabled" }
 }
 foreach ($mode in @('auto', 'enabled', 'disabled')) {
     Reject { Get-SigningPolicy $mode 'TRUE' } 'invalid repository policy'
 }
 Reject { Get-SigningPolicy 'other' '' } 'invalid signing mode'
+Reject { Assert-TrustedSignature ([pscustomobject]@{ Status = 'Valid'; TimeStamperCertificate = $null }) } 'required timestamp is missing'
+Reject { Assert-TrustedSignature ([pscustomobject]@{ Status = 'HashMismatch'; TimeStamperCertificate = 'synthetic' }) } 'invalid signature cannot pass'
 
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
 $commit = Invoke-ReleaseGit -C $repositoryRoot rev-parse HEAD
@@ -159,6 +162,15 @@ try {
         }
         return [pscustomobject]@{ StatusCode = $global:WindowGatherReleaseTestState.repoStatus }
     }
+    $global:WindowGatherReleaseTestState.signatureStatus = 'Valid'
+    function Get-AuthenticodeSignature {
+        param($LiteralPath)
+        Check (Test-Path -LiteralPath $LiteralPath) 'publication inspects actual archived executable bytes'
+        [pscustomobject]@{
+            Status = $global:WindowGatherReleaseTestState.signatureStatus
+            TimeStamperCertificate = [pscustomobject]@{ Subject = 'Synthetic test timestamp, not a real signature' }
+        }
+    }
     $token = $env:GH_TOKEN
     $env:GH_TOKEN = 'synthetic-not-a-credential'
     try {
@@ -191,6 +203,26 @@ try {
         $source = Get-ReleaseSource $version.Tag workflow_dispatch $commit
         Check (-not $source.NewTag -and $source.Commit -ceq $commit) 'annotated tag is peeled to commit'
         $global:WindowGatherReleaseTestState.tagObject = $commit
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -SigningRequired } 'required signing refuses unsigned archives'
+        foreach ($runtime in @('win-x64', 'win-arm64')) {
+            $package = Join-Path $temporary $runtime
+            Invoke-ReleaseGit -C $repositoryRoot archive --format=zip "--output=$(Join-Path $package 'source.zip')" $commit
+            $sourceHash = Get-ReleaseHash (Join-Path $package 'source.zip')
+            $manifest = Get-Content -LiteralPath (Join-Path $package 'release-manifest.json') -Raw | ConvertFrom-Json
+            $manifest.authenticodeSigned = $true
+            $manifest.signingProvider = 'Azure Artifact Signing'
+            $manifest.sourceArchiveSha256 = $sourceHash
+            $manifest | ConvertTo-Json | Set-Content (Join-Path $package 'release-manifest.json')
+            "$($manifest.executableSha256)  WindowGather.WinUI.exe`n$sourceHash  source.zip" |
+                Set-Content (Join-Path $package 'SHA256SUMS.txt')
+            $archive = Join-Path $temporary "window-gather-windows-$($runtime.Substring(4))-$($version.Tag).zip"
+            Remove-Item -LiteralPath $archive
+            New-ReleaseZip $package $archive $timestamp
+        }
+        $global:WindowGatherReleaseTestState.signatureStatus = 'NotSigned'
+        Reject { & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary } 'forged signed declaration cannot publish unsigned executable'
+        Check ($global:WindowGatherReleaseTestState.ghCalls -eq 0) 'unsigned/signature failure never publishes'
+        $global:WindowGatherReleaseTestState.signatureStatus = 'Valid'
         & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary
         Check ($global:WindowGatherReleaseTestState.ghCalls -eq 1) '404 creates exactly once'
         $global:WindowGatherReleaseTestState.releaseStatus = 200
@@ -225,8 +257,22 @@ try {
         $global:WindowGatherReleaseTestState.pushConflict = $false
         & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary -AllowNewTag
         Check ($global:WindowGatherReleaseTestState.tagPushes -eq 1 -and $global:WindowGatherReleaseTestState.ghCalls -eq 2) 'manual first release creates exact source tag only after validation'
+        foreach ($runtime in @('win-x64', 'win-arm64')) {
+            $package = Join-Path $temporary $runtime
+            $manifestPath = Join-Path $package 'release-manifest.json'
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $manifest.authenticodeSigned = $false
+            $manifest.signingProvider = 'none'
+            $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath
+            $archive = Join-Path $temporary "window-gather-windows-$($runtime.Substring(4))-$($version.Tag).zip"
+            Remove-Item -LiteralPath $archive
+            New-ReleaseZip $package $archive $timestamp
+        }
+        $global:WindowGatherReleaseTestState.signatureStatus = 'NotSigned'
+        & $publisher -Tag $version.Tag -Commit $commit -Repository 'test/repository' -AssetDirectory $temporary
+        Check ($global:WindowGatherReleaseTestState.ghCalls -eq 3) 'optional signing permits explicit unsigned publication'
     }
-    finally { $env:GH_TOKEN = $token; Remove-Item Function:\git, Function:\gh, Function:\Invoke-WebRequest }
+    finally { $env:GH_TOKEN = $token; Remove-Item Function:\git, Function:\gh, Function:\Invoke-WebRequest, Function:\Get-AuthenticodeSignature }
     Write-Output "PASS $($global:WindowGatherReleaseTestState.checks) release version/signing/archive/source/publication contract checks."
 }
 finally {

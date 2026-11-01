@@ -55,7 +55,7 @@ public sealed class NativeDesktop : IDesktop
                     return true;
                 // Mark before capturing identity/placement, so handle reuse during the scan is detectable.
                 if (!Native.SetProp(handle, PropertyName(token), 1))
-                    throw LastError("Cannot record this window safely. Elevated apps may need administrator access");
+                    throw LastError("Cannot record this window safely. Protected/elevated apps may refuse standard-user access");
                 SavedWindow window = CaptureWindow(handle);
                 if (!Matches(window, token))
                     throw new InvalidOperationException("The window was replaced during capture.");
@@ -183,7 +183,7 @@ public sealed class NativeDesktop : IDesktop
             Normal = Native.Rect.From(placement.Normal)
         };
         if (!Native.SetWindowPlacement(new nint(window.Handle), ref native))
-            throw LastError("Windows rejected the move. Try running as administrator for elevated apps");
+            throw LastError("Windows rejected the move. Protected/elevated apps may refuse standard-user access");
     }
 
     private static void WaitFor(SavedWindow window, string displayId, Placement placement, bool exactRectangle)

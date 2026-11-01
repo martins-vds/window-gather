@@ -13,10 +13,17 @@ public partial class App : Microsoft.UI.Xaml.Application
     private ShortcutController? shortcuts;
     private MainViewModel? model;
     private OperationCoordinator? coordinator;
+    private ShortcutMovement? shortcutMovement;
 #endif
 
     public App()
     {
+        try { RuntimePolicy.RequireStandardUser(); }
+        catch (InvalidOperationException error)
+        {
+            NativeMessage.Show(error.Message, "Unsupported elevated launch");
+            Environment.Exit(1);
+        }
         InitializeComponent();
         UnhandledException += (_, args) =>
         {
@@ -79,6 +86,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             model = new MainViewModel(coordinator, shortcuts, dispatcher, startup.warning);
             model.UpdateShortcuts(shortcuts.Activate(startup.settings));
             window = new MainWindow(model, () => shortcuts.Settings);
+            shortcutMovement = new ShortcutMovement(coordinator, startup.engine.GetPointerDisplay, window.ConfirmShortcutAsync);
             window.ExitRequested += ExitApplication;
             model.AttentionRequested += window.ShowWindow;
             model.IdentifyRequested += () =>
@@ -88,8 +96,18 @@ public partial class App : Microsoft.UI.Xaml.Application
             };
             shell.HotkeyPressed += async id =>
             {
-                if (id == shortcuts.GatherId) await model.ExecuteAsync(OperationKind.GatherPointer);
-                else if (id == shortcuts.RestoreId) await model.ExecuteAsync(OperationKind.Restore);
+                try
+                {
+                    OperationReply? reply = id == shortcuts.GatherId
+                        ? await shortcutMovement.ExecuteAsync(OperationKind.GatherPointer)
+                        : id == shortcuts.RestoreId ? await shortcutMovement.ExecuteAsync(OperationKind.Restore) : null;
+                    if (reply is not null)
+                    {
+                        if (reply.Accepted) model.PresentShortcutResult(reply);
+                        else model.Summary = reply.Summary;
+                    }
+                }
+                catch (Exception error) { model.ReportProblem("Shortcut movement failed: " + error.Message); }
             };
             shell.GatherRequested += async display => await model.ExecuteAsync(OperationKind.GatherSelected, display);
             shell.ActionRequested += async action =>
@@ -133,7 +151,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 #if !UI_PARITY_TEST
     private void ExitApplication()
     {
-        if (model?.IsBusy == true || coordinator?.HasWorkPending == true) return;
+        if (model?.IsBusy == true || coordinator?.HasWorkPending == true || shortcutMovement?.IsPending == true) return;
         try { shortcuts?.Release(); }
         catch (Exception error) { NativeMessage.Show(error.Message, "Cannot release shortcuts"); return; }
         identifier?.Dispose();

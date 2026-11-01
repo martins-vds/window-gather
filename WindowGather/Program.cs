@@ -5,6 +5,12 @@ static class Program
     [STAThread]
     static void Main()
     {
+        try { RuntimePolicy.RequireStandardUser(); }
+        catch (InvalidOperationException error)
+        {
+            MessageBox.Show(error.Message, "Unsupported elevated launch", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
         using var mutex = new Mutex(true, @"Local\WindowGather.DesktopUtility", out bool firstInstance);
         ApplicationConfiguration.Initialize();
         if (!firstInstance)

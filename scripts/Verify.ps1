@@ -15,6 +15,7 @@ try {
     Set-Location (Split-Path $PSScriptRoot -Parent)
     & .\scripts\VerifyDependencies.ps1
     & .\scripts\Test-Release.ps1
+    & .\scripts\Test-Publish.ps1
     Invoke-Dotnet tool restore
     Invoke-Dotnet restore .\WindowGather.slnx --locked-mode --nologo
     $run = Join-Path 'artifacts' ('coverage-' + [guid]::NewGuid().ToString('N'))
@@ -26,12 +27,10 @@ try {
     Invoke-Dotnet run --project .\WindowGather.Quality\WindowGather.Quality.csproj -c Release -- $report $coverage[0].FullName
     Invoke-Dotnet build .\WindowGather.WinUI\WindowGather.WinUI.csproj -c Release '-p:UiTestBuild=false' --nologo
     Invoke-Dotnet build .\WindowGather\WindowGather.csproj -c Release --nologo
-    if ($Native -or $LegacyUi) {
-        $selectors = @()
-        if ($Native) { $selectors += '--native' }
-        if ($LegacyUi) { $selectors += '--ui' }
-        Invoke-Dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- @selectors
-    }
+    $selectors = @()
+    if ($Native) { $selectors += '--native' }
+    if ($LegacyUi) { $selectors += '--ui' }
+    Invoke-Dotnet run --project .\WindowGather.Tests\WindowGather.Tests.csproj -c Release -- @selectors
     if ($Mutation) {
         Set-Location .\WindowGather.Core.Tests
         Invoke-Dotnet stryker --config-file .\stryker-domain.json --output ..\artifacts\mutation-domain

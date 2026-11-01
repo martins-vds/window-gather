@@ -19,6 +19,9 @@ The EXE is a single distributable file that extracts its bundled runtime
 contents on startup. Keep the accompanying `source.zip` (or the `source` folder
 in older releases) to inspect or rebuild the exact release; it is not required
 to run the utility. Run the EXE directly, not with `dotnet`.
+Current source supports standard-user execution only. Do not run it as
+administrator; an elevated launch is rejected, and runtime extraction happens
+before that check. Historical release packages have not been changed.
 
 1. Click **Identify displays** to show a large matching label on each monitor
    for three seconds, without moving your windows or taking keyboard focus.
@@ -42,6 +45,10 @@ is locked during a gather session, but Identify remains available.
 - **Ctrl+Alt+F12** (default): restore the current session.
   Windows reserves F12 for debuggers, so this legacy default may fail to register.
   It is intentionally preserved; choose another key if a warning appears.
+- Both movement shortcuts now show a confirmation dialog, defaulting to Cancel.
+  Gather remembers the display under the pointer before opening the dialog.
+  Check the destination: window contents may be visible on a shared display.
+  Button/tray actions remain unchanged.
 - Click **Change shortcuts...** (also available in the tray menu) to choose
   Ctrl, Alt, Shift, and/or Win plus a letter, number, or function key for each
   action. At least Ctrl, Alt, or Win is required, and the actions must differ.
@@ -118,8 +125,8 @@ removes the return record. **Exit** does not forget recovery.
   with the original windows intact. It survives a utility restart, not an
   application restart.
 - Elevated/protected apps may refuse capture, session markers, or movement.
-  Failures appear in the details area. If needed, start Window Gather as
-  administrator yourself; it does not elevate automatically.
+  Failures appear in the details area. Run Window Gather normally; administrator
+  mode is not supported in current source.
 - Native Windows Snap groups/zone metadata and window stacking order are not
   restored. Normal placement and minimized/maximized state are restored.
 - Some full-screen, custom, fixed-size, or modal applications control their own

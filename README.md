@@ -37,7 +37,9 @@ artifacts and the legacy WinForms frontend are not equivalent release versions.
 
 The default Gather shortcut is Ctrl+Alt+F11. The preserved Restore default,
 Ctrl+Alt+F12, may not register because Windows reserves F12 for debuggers;
-use **Change shortcuts...** if warned. No telemetry or display-setting changes.
+use **Change shortcuts...** if warned. Current source confirms shortcut movement
+before moving windows and rejects administrator launches. Run normally; do not
+elevate the portable EXE. No telemetry or display-setting changes.
 
 ## Build, understand, contribute
 
